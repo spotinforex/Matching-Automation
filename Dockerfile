@@ -20,9 +20,6 @@ RUN  uv sync --frozen --no-dev
 # --- App layer -----------------------------------------------------
 COPY . .
 
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
-
 # Put the venv on PATH so plain `uvicorn ...` works without `uv run` prefix
 ENV PATH="/app/.venv/bin:$PATH"
 
