@@ -23,6 +23,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
@@ -40,6 +41,24 @@ logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(nam
 load_dotenv()
 
 app = FastAPI(title="Matching Automation")
+
+_default_dev_origins = "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173"
+_allowed_origins_raw = os.environ.get("ALLOWED_ORIGINS", _default_dev_origins)
+ALLOWED_ORIGINS = [origin.strip() for origin in _allowed_origins_raw.split(",") if origin.strip()]
+
+if "ALLOWED_ORIGINS" not in os.environ:
+    print(
+        f"WARNING: ALLOWED_ORIGINS not set — defaulting CORS to local dev origins "
+        f"{ALLOWED_ORIGINS}. Set ALLOWED_ORIGINS before deploying."
+    )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
 
 # ---------------------------------------------------------------------------
 # In-memory app state (swap for a DB/session store for multi-user/production use)

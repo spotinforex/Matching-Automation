@@ -1,15 +1,13 @@
 import React, { useState } from 'react';
-import { X, Server, CheckCircle2, AlertCircle, RefreshCw, Code, ArrowRight, Zap, Globe } from 'lucide-react';
+import { X, Server, CheckCircle2, AlertCircle, RefreshCw, Code, Globe } from 'lucide-react';
 import { DEFAULT_BACKEND_URL } from '../services/api';
 
 interface BackendSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUrl: string;
-  isMockMode: boolean;
   healthStatus: { ok: boolean; statusText: string } | null;
   onSaveUrl: (url: string) => void;
-  onToggleMockMode: (enabled: boolean) => void;
   onCheckHealth: () => void;
   isCheckingHealth: boolean;
 }
@@ -18,10 +16,8 @@ export const BackendSettingsModal: React.FC<BackendSettingsModalProps> = ({
   isOpen,
   onClose,
   currentUrl,
-  isMockMode,
   healthStatus,
   onSaveUrl,
-  onToggleMockMode,
   onCheckHealth,
   isCheckingHealth,
 }) => {
@@ -59,28 +55,6 @@ export const BackendSettingsModal: React.FC<BackendSettingsModalProps> = ({
 
         {/* Modal Body */}
         <div className="p-6 space-x-0 space-y-6">
-          {/* Mode Selector Toggle */}
-          <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 flex items-center justify-between">
-            <div className="space-y-0.5">
-              <div className="flex items-center space-x-2">
-                <Zap className="w-4 h-4 text-orange-600" />
-                <span className="font-semibold text-sm text-slate-900">Client Simulation / Demo Mode</span>
-              </div>
-              <p className="text-xs text-slate-500">
-                Run geocoding & matching pipeline entirely in the browser when offline.
-              </p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={isMockMode}
-                onChange={(e) => onToggleMockMode(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600"></div>
-            </label>
-          </div>
-
           {/* Backend URL Input Form */}
           <form onSubmit={handleApply} className="space-y-3">
             <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider">
@@ -94,8 +68,7 @@ export const BackendSettingsModal: React.FC<BackendSettingsModalProps> = ({
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
                   placeholder="http://localhost:8000"
-                  disabled={isMockMode}
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 rounded-lg pl-9 pr-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50"
+                  className="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 rounded-lg pl-9 pr-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-orange-500"
                 />
               </div>
               <button
@@ -104,15 +77,13 @@ export const BackendSettingsModal: React.FC<BackendSettingsModalProps> = ({
                   setUrlInput(DEFAULT_BACKEND_URL);
                   onSaveUrl(DEFAULT_BACKEND_URL);
                 }}
-                disabled={isMockMode}
-                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-xs font-medium text-slate-700 border border-slate-200 rounded-lg transition-colors disabled:opacity-50"
+                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-xs font-medium text-slate-700 border border-slate-200 rounded-lg transition-colors"
               >
                 Reset Default
               </button>
               <button
                 type="submit"
-                disabled={isMockMode}
-                className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-xs font-semibold text-white rounded-lg transition-colors shadow-xs disabled:opacity-50"
+                className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-xs font-semibold text-white rounded-lg transition-colors shadow-xs"
               >
                 Apply Host
               </button>
@@ -159,14 +130,14 @@ export const BackendSettingsModal: React.FC<BackendSettingsModalProps> = ({
             <div className="space-y-1.5 font-mono text-[11px] bg-slate-50 p-3 rounded-lg border border-slate-200 text-slate-700">
               <div className="flex items-center justify-between">
                 <span className="text-emerald-700 font-bold">POST /upload/yp</span>
-                <span className="text-slate-500">Multipart .xlsx → &#123;"loaded": 1064&#125;</span>
+                <span className="text-slate-500">Multipart .xlsx → &#123;"loaded": number&#125;</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-emerald-700 font-bold">POST /upload/mcp</span>
-                <span className="text-slate-500">Multipart .xlsx → &#123;"loaded": 236&#125;</span>
+                <span className="text-slate-500">Multipart .xlsx → &#123;"loaded": number&#125;</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-emerald-700 font-bold">POST /match/run</span>
+                <span className="text-emerald-700 font-bold">POST /match/run?HOP_LIMIT=3</span>
                 <span className="text-slate-500">Geocode + Hop Match → MatchRunResponse</span>
               </div>
               <div className="flex items-center justify-between">
@@ -194,3 +165,4 @@ export const BackendSettingsModal: React.FC<BackendSettingsModalProps> = ({
     </div>
   );
 };
+

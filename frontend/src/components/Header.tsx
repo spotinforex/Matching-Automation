@@ -1,9 +1,8 @@
 import React from 'react';
-import { Network, Settings, RefreshCw, Zap, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Network, Settings, RefreshCw, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 interface HeaderProps {
   backendUrl: string;
-  isMockMode: boolean;
   healthStatus: { ok: boolean; statusText: string } | null;
   isCheckingHealth: boolean;
   onOpenSettings: () => void;
@@ -11,7 +10,6 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({
   backendUrl,
-  isMockMode,
   healthStatus,
   isCheckingHealth,
   onOpenSettings,
@@ -43,17 +41,13 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onOpenSettings}
             className={`flex items-center space-x-2 text-xs px-3 py-1.5 rounded-lg border transition-all ${
-              isMockMode
-                ? 'bg-orange-50 text-orange-800 border-orange-200 hover:bg-orange-100/80'
-                : healthStatus?.ok
+              healthStatus?.ok
                 ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100/80'
                 : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100/80'
             }`}
           >
             {isCheckingHealth ? (
               <RefreshCw className="w-3.5 h-3.5 animate-spin text-slate-400" />
-            ) : isMockMode ? (
-              <Zap className="w-3.5 h-3.5 text-orange-600" />
             ) : healthStatus?.ok ? (
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
             ) : (
@@ -62,7 +56,7 @@ export const Header: React.FC<HeaderProps> = ({
 
             <div className="text-left font-medium">
               <span className="block truncate max-w-[140px] sm:max-w-[200px]">
-                {isMockMode ? 'Simulation Mode' : backendUrl}
+                {backendUrl}
               </span>
             </div>
             <Settings className="w-3.5 h-3.5 opacity-60 ml-1" />
@@ -72,5 +66,6 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
+
 
 

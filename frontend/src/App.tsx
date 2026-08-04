@@ -14,7 +14,6 @@ import { AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
 
 export default function App() {
   const [backendUrl, setBackendUrl] = useState<string>(DEFAULT_BACKEND_URL);
-  const [isMockMode, setIsMockMode] = useState<boolean>(true); // default to simulation for instant experience
   const [healthStatus, setHealthStatus] = useState<{ ok: boolean; statusText: string } | null>(null);
   const [isCheckingHealth, setIsCheckingHealth] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
@@ -28,7 +27,6 @@ export default function App() {
   const [isUploadingYp, setIsUploadingYp] = useState<boolean>(false);
   const [isUploadingMcp, setIsUploadingMcp] = useState<boolean>(false);
   const [isMatching, setIsMatching] = useState<boolean>(false);
-  const [isExporting, setIsExporting] = useState<boolean>(false);
 
   const [hopLimit, setHopLimit] = useState<number>(3);
   const [matchResponse, setMatchResponse] = useState<MatchRunResponse | null>(null);
@@ -69,9 +67,8 @@ export default function App() {
 
   useEffect(() => {
     apiService.setBaseUrl(backendUrl);
-    apiService.setMockMode(isMockMode);
     checkHealth();
-  }, [backendUrl, isMockMode, checkHealth]);
+  }, [backendUrl, checkHealth]);
 
   // Handle YP upload
   const handleUploadYP = async (file: File) => {
@@ -142,7 +139,7 @@ export default function App() {
         prev[4]
       ]);
 
-      const res = await apiService.runMatch();
+      const res = await apiService.runMatch(hopLimit);
 
       setPipelineSteps(prev => [
         prev[0],
@@ -162,33 +159,11 @@ export default function App() {
     }
   };
 
-  // Handle Export Backend (.xlsx download)
-  const handleExportBackend = async () => {
-    setIsExporting(true);
-    try {
-      const blob = await apiService.exportResults();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `match_results_${new Date().toISOString().slice(0, 10)}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-      showNotification('success', 'Match results downloaded successfully');
-    } catch (err: any) {
-      showNotification('error', err.message || 'Export download failed');
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-orange-600 selection:text-white">
       {/* Top Header */}
       <Header
         backendUrl={backendUrl}
-        isMockMode={isMockMode}
         healthStatus={healthStatus}
         isCheckingHealth={isCheckingHealth}
         onOpenSettings={() => setIsSettingsOpen(true)}
@@ -283,8 +258,6 @@ export default function App() {
                 setSelectedResultItem(item);
                 setIsWaitlistModal(isWaitlist);
               }}
-              onExportBackend={handleExportBackend}
-              isExporting={isExporting}
             />
           </section>
         )}
@@ -306,10 +279,8 @@ export default function App() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         currentUrl={backendUrl}
-        isMockMode={isMockMode}
         healthStatus={healthStatus}
         onSaveUrl={(url) => setBackendUrl(url)}
-        onToggleMockMode={(enabled) => setIsMockMode(enabled)}
         onCheckHealth={checkHealth}
         isCheckingHealth={isCheckingHealth}
       />

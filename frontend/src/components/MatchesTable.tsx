@@ -2,7 +2,6 @@ import React, { useState, useMemo } from 'react';
 import { MatchResult, WaitlistEntry, MatchRunResponse } from '../types';
 import {
   Search,
-  Download,
   Eye,
   Clock,
   MapPin,
@@ -20,15 +19,11 @@ import { downloadResultsExcel } from '../utils/excelExport';
 interface MatchesTableProps {
   data: MatchRunResponse | null;
   onSelectResult: (item: MatchResult | WaitlistEntry, isWaitlist: boolean) => void;
-  onExportBackend: () => void;
-  isExporting: boolean;
 }
 
 export const MatchesTable: React.FC<MatchesTableProps> = ({
   data,
   onSelectResult,
-  onExportBackend,
-  isExporting,
 }) => {
   const [activeTab, setActiveTab] = useState<'matches' | 'waitlist'>('matches');
   const [searchTerm, setSearchTerm] = useState('');
@@ -146,16 +141,6 @@ export const MatchesTable: React.FC<MatchesTableProps> = ({
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
               <span>Export .xlsx</span>
-            </button>
-
-            <button
-              onClick={onExportBackend}
-              disabled={isExporting}
-              className="hidden md:flex items-center space-x-1.5 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors disabled:opacity-50"
-              title="GET /match/export API download"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Backend Export</span>
             </button>
           </div>
         </div>
