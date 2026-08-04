@@ -33,8 +33,14 @@ from utils.excel_export import build_results_workbook
 from logic.landmark import build_landmark_order
 from logic.matcher import Matcher
 from configs.schemas import MatchRunResponse, MatchResult, WaitlistEntry
+from dotenv import load_dotenv
+import logging
 
-app = FastAPI(title="YP-MCP Matcher")
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+load_dotenv()
+
+app = FastAPI(title="Matching Automation")
 
 # ---------------------------------------------------------------------------
 # In-memory app state (swap for a DB/session store for multi-user/production use)

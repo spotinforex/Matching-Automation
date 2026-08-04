@@ -1,5 +1,9 @@
-from collections import defaultdict
+import logging
 import random
+import time
+from collections import defaultdict
+
+logger = logging.getLogger(__name__)
 
 
 class Matcher:
@@ -12,8 +16,23 @@ class Matcher:
     ####################################################################
 
     def geocode_missing(self, yps, mcps):
+        """
+        Geocodes every person missing coordinates. People whose address AND
+        landmark fallback both fail to resolve are NOT silently skipped with
+        null coordinates (that would just defer the crash to build_cost_matrix
+        / travel_time later, with a much less useful stack trace). Instead
+        they're collected here and returned so the caller (run()) can route
+        them straight to the waitlist before matching ever starts.
+        """
 
         cache = {}
+        to_geocode = len([p for p in yps + mcps if p.latitude is None])
+        logger.info("geocode_missing() starting: %d people need geocoding (of %d total)",
+                    to_geocode, len(yps) + len(mcps))
+
+        start = time.monotonic()
+        resolved = 0
+        failed = []
 
         for person in yps + mcps:
 
@@ -21,12 +40,32 @@ class Matcher:
                 continue
 
             if person.address not in cache:
-                cache[person.address] = self.distance.geocode(
-                    person.address,
-                    landmark_fallback=person.landmark,
-                )
+                try:
+                    cache[person.address] = self.distance.geocode(
+                        person.address,
+                        landmark_fallback=person.landmark,
+                    )
+                except ValueError:
+                    logger.error(
+                        "geocode_missing() could not geocode person id=%s address=%r landmark=%r "
+                        "— routing to waitlist",
+                        getattr(person, "id", "?"), person.address, person.landmark,
+                    )
+                    failed.append(person)
+                    continue
 
             person.latitude, person.longitude = cache[person.address]
+            resolved += 1
+
+        elapsed = time.monotonic() - start
+        logger.info(
+            "geocode_missing() done in %.2fs: %d resolved, %d failed (unresolvable), "
+            "%d unique addresses geocoded (%.2fs/address avg)",
+            elapsed, resolved, len(failed), len(cache),
+            elapsed / len(cache) if cache else 0.0,
+        )
+
+        return failed
 
     ####################################################################
     # Stage 2
@@ -39,6 +78,9 @@ class Matcher:
         for p in people:
             groups[p.landmark].append(p)
 
+        logger.debug("group_by_landmark() grouped %d people into %d landmarks: %s",
+                     len(people), len(groups), {k: len(v) for k, v in groups.items()})
+
         return groups
 
     ####################################################################
@@ -48,6 +90,7 @@ class Matcher:
     def build_cost_matrix(self, yp_group, mcp_group):
 
         matrix = []
+        skipped_skill_mismatch = 0
 
         for yp in yp_group:
 
@@ -56,6 +99,7 @@ class Matcher:
                 # Skill constraint
 
                 if yp.skill != mcp.skill:
+                    skipped_skill_mismatch += 1
                     continue
 
                 t = self.distance.travel_time(
@@ -66,6 +110,11 @@ class Matcher:
                 matrix.append((t, yp.id, mcp.id))
 
         matrix.sort(key=lambda x: x[0])
+
+        logger.debug(
+            "build_cost_matrix() yps=%d mcps=%d -> %d pairs (skipped %d skill mismatches)",
+            len(yp_group), len(mcp_group), len(matrix), skipped_skill_mismatch,
+        )
 
         return matrix
 
@@ -79,6 +128,11 @@ class Matcher:
         mcp_group,
         round_number
     ):
+
+        logger.info(
+            "greedy_match() round=%d starting: %d yps, %d mcps",
+            round_number, len(yp_group), len(mcp_group),
+        )
 
         matches = []
         unmatched = []
@@ -127,6 +181,10 @@ class Matcher:
                 ]
 
                 if not same_time:
+                    logger.debug(
+                        "greedy_match() yp_id=%s: all %d tied MCPs full at travel=%.1f, skipping",
+                        yp_id, len(same_time), travel,
+                    )
                     continue  # every tied MCP is full; move on in the matrix
 
                 same_time.sort(
@@ -144,6 +202,11 @@ class Matcher:
                 travel, yp_id, mcp_id = random.choice(candidates)
                 mcp = mcp_lookup[mcp_id]
 
+                logger.debug(
+                    "greedy_match() tie-break for yp_id=%s: %d candidates at load=%d, picked mcp_id=%s",
+                    yp_id, len(candidates), best_load, mcp_id,
+                )
+
             assigned.add(yp_id)
             load[mcp_id] += 1
 
@@ -159,6 +222,11 @@ class Matcher:
             if yp.id not in assigned:
                 unmatched.append(yp)
 
+        logger.info(
+            "greedy_match() round=%d done: %d matched, %d unmatched",
+            round_number, len(matches), len(unmatched),
+        )
+
         return matches, unmatched, load
 
     def run(
@@ -169,13 +237,54 @@ class Matcher:
         hop_limit=3
     ):
 
-        self.geocode_missing(yps, mcps)
+        logger.info("run() starting: %d yps, %d mcps, hop_limit=%d", len(yps), len(mcps), hop_limit)
+
+        run_start = time.monotonic()
+        all_matches = []
+        waitlist = []
+        dropped_mcps = []
+
+        ####################################################
+        # Geocoding — anyone unresolvable is pulled out before
+        # matching starts, rather than crashing mid-match with
+        # None coordinates.
+        ####################################################
+
+        geocode_failed = self.geocode_missing(yps, mcps)
+        geocode_elapsed = time.monotonic() - run_start
+
+        if geocode_failed:
+            failed_ids = {id(p) for p in geocode_failed}
+            failed_yps = [p for p in geocode_failed if p in yps]
+            failed_mcps = [p for p in geocode_failed if p in mcps]
+
+            yps = [p for p in yps if id(p) not in failed_ids]
+            mcps = [p for p in mcps if id(p) not in failed_ids]
+
+            for yp in failed_yps:
+                waitlist.append({
+                    "yp_id": yp.id,
+                    "reason": "Could not geocode address",
+                })
+
+            if failed_mcps:
+                logger.warning(
+                    "run() dropping %d mcp(s) with unresolvable addresses from the matching pool: %s",
+                    len(failed_mcps), [m.id for m in failed_mcps],
+                )
+                for mcp in failed_mcps:
+                    dropped_mcps.append({
+                        "mcp_id": mcp.id,
+                        "reason": "Could not geocode address",
+                    })
+
+            logger.info(
+                "run() geocoding removed %d yp(s) (-> waitlist) and %d mcp(s) (-> dropped) from the pool",
+                len(failed_yps), len(failed_mcps),
+            )
 
         yp_groups = self.group_by_landmark(yps)
         mcp_groups = self.group_by_landmark(mcps)
-
-        all_matches = []
-        waitlist = []
 
         remaining_capacity = {
             m.id: m.capacity
@@ -187,6 +296,8 @@ class Matcher:
         ####################################################
         # Round 1
         ####################################################
+
+        logger.info("run() round 1: matching within landmark, %d landmarks", len(yp_groups))
 
         for landmark in yp_groups:
 
@@ -202,6 +313,11 @@ class Matcher:
             for mcp_id, used in loads.items():
                 remaining_capacity[mcp_id] -= used
 
+        logger.info(
+            "run() round 1 done: %d total matches so far, %d unmatched heading into hop rounds",
+            len(all_matches), len(unmatched),
+        )
+
         ####################################################
         # Round 2+
         ####################################################
@@ -209,9 +325,13 @@ class Matcher:
         for hop in range(1, hop_limit + 1):
 
             if not unmatched:
+                logger.info("run() hop %d: no unmatched yps left, stopping early", hop)
                 break
 
+            logger.info("run() hop %d: attempting to place %d unmatched yps", hop, len(unmatched))
+
             next_round = []
+            placed_this_hop = 0
 
             for yp in unmatched:
 
@@ -256,6 +376,7 @@ class Matcher:
                     continue
 
                 remaining_capacity[best.id] -= 1
+                placed_this_hop += 1
 
                 all_matches.append({
                     "yp_id": yp.id,
@@ -266,6 +387,10 @@ class Matcher:
                 })
 
             unmatched = next_round
+            logger.info(
+                "run() hop %d done: %d placed, %d still unmatched",
+                hop, placed_this_hop, len(unmatched),
+            )
 
         ####################################################
         # Waitlist
@@ -277,7 +402,16 @@ class Matcher:
                 "reason": "No capacity within hop limit"
             })
 
+        logger.info(
+            "run() finished in %.2fs (geocoding %.2fs, matching %.2fs): "
+            "%d total matches, %d waitlisted, %d mcp(s) dropped",
+            time.monotonic() - run_start, geocode_elapsed,
+            (time.monotonic() - run_start) - geocode_elapsed,
+            len(all_matches), len(waitlist), len(dropped_mcps),
+        )
+
         return {
             "matches": all_matches,
-            "waitlist": waitlist
+            "waitlist": waitlist,
+            "dropped_mcps": dropped_mcps,
         }

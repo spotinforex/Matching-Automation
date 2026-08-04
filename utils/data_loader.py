@@ -16,7 +16,7 @@ import re
 
 import pandas as pd
 
-from schemas import YoungProfessional, MCP
+from configs.schemas import YoungProfessional, MCP
 from pathlib import Path
 
 DEFAULT_CONFIG_PATH = Path.cwd() / "configs" / "column_config.json"

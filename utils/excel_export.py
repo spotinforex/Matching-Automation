@@ -11,13 +11,17 @@ No formulas here — this is a static results export, not a model — so nothing
 needs recalculation before it's handed to the user.
 """
 
+import logging
+import time
 from datetime import datetime, timezone
 
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.utils import get_column_letter
 
-from schemas import MatchRunResponse
+from configs.schemas import MatchRunResponse
+
+logger = logging.getLogger(__name__)
 
 HEADER_FONT = Font(name="Arial", bold=True, color="FFFFFF")
 HEADER_FILL = PatternFill(start_color="2F5496", end_color="2F5496", fill_type="solid")
@@ -26,6 +30,11 @@ TITLE_FONT = Font(name="Arial", bold=True, size=14)
 
 
 def _write_table(ws, headers: list[str], rows: list[list], start_row: int = 1):
+    logger.debug(
+        "_write_table() writing sheet=%r: %d header(s), %d row(s), start_row=%d",
+        ws.title, len(headers), len(rows), start_row,
+    )
+
     for col_idx, header in enumerate(headers, start=1):
         cell = ws.cell(row=start_row, column=col_idx, value=header)
         cell.font = HEADER_FONT
@@ -46,7 +55,15 @@ def _write_table(ws, headers: list[str], rows: list[list], start_row: int = 1):
         for row in rows:
             val = row[col_idx - 1]
             max_len = max(max_len, len(str(val)) if val is not None else 0)
-        ws.column_dimensions[col_letter].width = min(max_len + 3, 45)
+        width = min(max_len + 3, 45)
+        ws.column_dimensions[col_letter].width = width
+        if max_len + 3 > 45:
+            logger.debug(
+                "_write_table() sheet=%r column %r truncated width to cap (content wanted %d)",
+                ws.title, header, max_len + 3,
+            )
+
+    logger.debug("_write_table() finished sheet=%r", ws.title)
 
 
 def build_results_workbook(result: MatchRunResponse, output_path: str) -> str:
@@ -54,6 +71,12 @@ def build_results_workbook(result: MatchRunResponse, output_path: str) -> str:
     Write `result` (matches + waitlist) to output_path as a formatted .xlsx.
     Returns output_path for convenience.
     """
+    logger.info(
+        "build_results_workbook() starting: %d match(es), %d waitlisted, output_path=%r",
+        len(result.matches), len(result.waitlist), output_path,
+    )
+
+    start = time.monotonic()
     wb = Workbook()
 
     # -- Matches sheet -----------------------------------------------------
@@ -64,6 +87,8 @@ def build_results_workbook(result: MatchRunResponse, output_path: str) -> str:
         [m.yp_id, m.mcp_id, m.landmark, round(m.travel_time, 1), m.round]
         for m in result.matches
     ]
+    if not match_rows:
+        logger.warning("build_results_workbook() no matches to write — Matches sheet will be header-only")
     _write_table(ws_matches, match_headers, match_rows)
 
     # -- Waitlist sheet -----------------------------------------------------
@@ -80,6 +105,8 @@ def build_results_workbook(result: MatchRunResponse, output_path: str) -> str:
     ws_summary["A2"].font = BODY_FONT
 
     rounds_seen = sorted(set(m.round for m in result.matches))
+    logger.debug("build_results_workbook() rounds present in results: %s", rounds_seen)
+
     summary_rows = [["Total matched", result.matched_count]]
     summary_rows += [
         [f"Matched in round {r}" + (" (same landmark)" if r == 1 else " (fallback hop)"),
@@ -90,5 +117,13 @@ def build_results_workbook(result: MatchRunResponse, output_path: str) -> str:
 
     _write_table(ws_summary, ["Metric", "Count"], summary_rows, start_row=4)
 
-    wb.save(output_path)
+    try:
+        wb.save(output_path)
+    except OSError:
+        logger.exception("build_results_workbook() failed to save workbook to %r", output_path)
+        raise
+
+    elapsed = time.monotonic() - start
+    logger.info("build_results_workbook() done in %.2fs: saved to %r", elapsed, output_path)
+
     return output_path
