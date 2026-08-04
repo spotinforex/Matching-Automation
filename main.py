@@ -74,7 +74,6 @@ else:
     )
     DISTANCE_SERVICE = HaversineDistanceService(coordinate_lookup={})
 
-HOP_LIMIT = 3  # how many "next-closest landmark" fallback rounds to try
 
 
 @app.get("/health")
@@ -123,7 +122,7 @@ async def upload_mcp(file: UploadFile = File(...)):
 
 
 @app.post("/match/run", response_model=MatchRunResponse)
-def run_match():
+def run_match(HOP_LIMIT: int = 3):
     if not state["yps"]:
         raise HTTPException(400, "No YP data loaded — call /upload/yp first")
     if not state["mcps"]:

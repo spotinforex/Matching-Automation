@@ -1,0 +1,6 @@
+{
+  "name": "YP to MCP Automation",
+  "description": "Automated YP to MCP matching dashboard with geocoding analysis, travel time optimization, round breakdown, waitlist tracking, and interactive charts.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
