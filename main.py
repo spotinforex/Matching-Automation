@@ -7,7 +7,6 @@ Endpoints:
     POST /upload/yp     - upload the YP source .xlsx, parses & stores in memory
     POST /upload/mcp    - upload the MCP source .xlsx, parses & stores in memory
     POST /match/run     - runs geocoding + matching end-to-end, returns results
-    GET  /match/results - re-fetch the results of the last run
     GET  /health        - liveness check
     GET /match/export  - download the last match run as a formatted .xlsx
 
@@ -154,13 +153,6 @@ def run_match():
     )
     state["last_result"] = response
     return response
-
-
-@app.get("/match/results", response_model=MatchRunResponse)
-def get_results():
-    if state["last_result"] is None:
-        raise HTTPException(404, "No match run yet — call POST /match/run first")
-    return state["last_result"]
 
 
 @app.get("/match/export")
