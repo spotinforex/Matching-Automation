@@ -21,7 +21,10 @@ class Matcher:
                 continue
 
             if person.address not in cache:
-                cache[person.address] = self.distance.geocode(person.address)
+                cache[person.address] = self.distance.geocode(
+                    person.address,
+                    landmark_fallback=person.landmark,
+                )
 
             person.latitude, person.longitude = cache[person.address]
 
@@ -90,11 +93,6 @@ class Matcher:
             for m in mcp_group
         }
 
-        yp_lookup = {
-            y.id: y
-            for y in yp_group
-        }
-
         assigned = set()
 
         matrix = self.build_cost_matrix(
@@ -119,6 +117,18 @@ class Matcher:
 
             if len(same_time) > 1:
 
+                # BUGFIX: only consider tied MCPs that still have room —
+                # previously a full MCP could still be picked here because
+                # capacity was only checked for the *original* candidate,
+                # not for a tie-broken reselection.
+                same_time = [
+                    s for s in same_time
+                    if load[s[2]] < mcp_lookup[s[2]].capacity
+                ]
+
+                if not same_time:
+                    continue  # every tied MCP is full; move on in the matrix
+
                 same_time.sort(
                     key=lambda x: load[x[2]]
                 )
@@ -132,6 +142,7 @@ class Matcher:
                 ]
 
                 travel, yp_id, mcp_id = random.choice(candidates)
+                mcp = mcp_lookup[mcp_id]
 
             assigned.add(yp_id)
             load[mcp_id] += 1
