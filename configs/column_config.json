@@ -1,15 +1,14 @@
 {
   "hard_cap_per_mcp": 5,
-
   "yp_columns": {
     "id": "YP CODE (Tech & Data)",
     "name": "YP Name2",
     "address": "residential_address",
     "landmark": "Which_cluster_is_nearest_to_you_2",
     "trade": "which_area_of_the_fashion_industry_did_you_register_for2",
+    "phone_number": "What_is_your_number_sms",
     "proceed_flag": "should_participant_proceed"
   },
-
   "mcp_columns": {
     "id": "MCP Code",
     "name": "Full Name",
@@ -19,7 +18,6 @@
     "mcp_requested_capacity": "MCP Choice",
     "recommended_capacity": "MERL Recommendation"
   },
-
   "trade_canonical_map": {
     "footwear_production": ["footwear"],
     "leather_bag_production": ["leather"],

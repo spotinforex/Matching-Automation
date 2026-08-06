@@ -29,6 +29,7 @@ from starlette.background import BackgroundTask
 
 from utils.data_loader import load_yps, load_mcps
 from logic.services import HaversineDistanceService, GoogleMapsDistanceService  # noqa: F401
+from logic.cached_distance_service import CachedDistanceService
 from utils.excel_export import build_results_workbook
 from logic.landmark import build_landmark_order
 from logic.matcher import Matcher
@@ -37,6 +38,7 @@ from dotenv import load_dotenv
 import logging
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -47,9 +49,10 @@ _allowed_origins_raw = os.environ.get("ALLOWED_ORIGINS", _default_dev_origins)
 ALLOWED_ORIGINS = [origin.strip() for origin in _allowed_origins_raw.split(",") if origin.strip()]
 
 if "ALLOWED_ORIGINS" not in os.environ:
-    print(
-        f"WARNING: ALLOWED_ORIGINS not set — defaulting CORS to local dev origins "
-        f"{ALLOWED_ORIGINS}. Set ALLOWED_ORIGINS before deploying."
+    logger.warning(
+        "ALLOWED_ORIGINS not set — defaulting CORS to local dev origins %s. "
+        "Set ALLOWED_ORIGINS before deploying.",
+        ALLOWED_ORIGINS,
     )
 
 app.add_middleware(
@@ -70,25 +73,26 @@ state = {
     "last_result": None,
 }
 
-# ---------------------------------------------------------------------------
-# Distance service.
-#
-# The API key is read from the GOOGLE_MAPS_API_KEY environment variable —
-# never hardcode it here or commit it. Set it before starting the app, e.g.:
-#   export GOOGLE_MAPS_API_KEY="your-key-here"
-#   uvicorn main:app --reload
-#
-# Falls back to the offline Haversine estimate if the env var isn't set, so
-# the app still boots (with a warning) for local testing without a key.
-# ---------------------------------------------------------------------------
-
 _google_api_key = os.environ.get("GOOGLE_API_KEY")
+_database_url = os.environ.get("DATABASE_URL") or os.environ.get("SUPABASE_DB_URL")
 
 if _google_api_key:
-    DISTANCE_SERVICE = GoogleMapsDistanceService(api_key=_google_api_key)
+    _real_service = GoogleMapsDistanceService(api_key=_google_api_key)
+
+    if _database_url:
+        DISTANCE_SERVICE = CachedDistanceService(_real_service, database_url=_database_url)
+        logger.info("Using GoogleMapsDistanceService with a Postgres-backed cache (DATABASE_URL set).")
+    else:
+        DISTANCE_SERVICE = _real_service
+        logger.warning(
+            "DATABASE_URL not set — geocode/travel-time cache is in-memory only "
+            "and will reset on every restart/redeploy, re-billing Google for addresses "
+            "you've already paid for. Set DATABASE_URL to a Postgres connection string "
+            "(e.g. from Supabase) to persist the cache."
+        )
 else:
-    print(
-        "WARNING: GOOGLE_MAPS_API_KEY not set — falling back to the offline "
+    logger.warning(
+        "GOOGLE_MAPS_API_KEY not set — falling back to the offline "
         "Haversine estimate. Real matches will be inaccurate until this is set."
     )
     DISTANCE_SERVICE = HaversineDistanceService(coordinate_lookup={})
@@ -186,7 +190,7 @@ def export_results():
     filename = f"match_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     output_path = str(Path(tmp_dir) / filename)
 
-    build_results_workbook(state["last_result"], output_path)
+    build_results_workbook(state["last_result"], state["yps"], state["mcps"], output_path)
 
     return FileResponse(
         path=output_path,

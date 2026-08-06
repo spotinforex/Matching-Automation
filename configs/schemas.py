@@ -4,15 +4,18 @@ from pydantic import BaseModel
 
 class YoungProfessional(BaseModel):
     id: str
+    name: str
     skill: str
     address: str
     landmark: str
+    phone_number: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
 
 class MCP(BaseModel):
     id: str
+    name: str
     skill: str
     address: str
     landmark: str
