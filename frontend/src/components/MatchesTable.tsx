@@ -8,22 +8,26 @@ import {
   Layers,
   ChevronLeft,
   ChevronRight,
-  FileSpreadsheet,
+  Download,
   Copy,
   Check,
   UserX,
   UserCheck,
+  RefreshCw,
 } from 'lucide-react';
-import { downloadResultsExcel } from '../utils/excelExport';
 
 interface MatchesTableProps {
   data: MatchRunResponse | null;
   onSelectResult: (item: MatchResult | WaitlistEntry, isWaitlist: boolean) => void;
+  onExportApi?: () => void;
+  isExporting?: boolean;
 }
 
 export const MatchesTable: React.FC<MatchesTableProps> = ({
   data,
   onSelectResult,
+  onExportApi,
+  isExporting = false,
 }) => {
   const [activeTab, setActiveTab] = useState<'matches' | 'waitlist'>('matches');
   const [searchTerm, setSearchTerm] = useState('');
@@ -81,10 +85,6 @@ export const MatchesTable: React.FC<MatchesTableProps> = ({
     setTimeout(() => setCopiedJson(false), 2000);
   };
 
-  const handleDownloadClientExcel = () => {
-    downloadResultsExcel(data);
-  };
-
   return (
     <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden space-y-0">
       {/* Table Controls & Header */}
@@ -135,12 +135,17 @@ export const MatchesTable: React.FC<MatchesTableProps> = ({
             </button>
 
             <button
-              onClick={handleDownloadClientExcel}
-              className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors"
-              title="Download formatted Excel workbook with Matches, Waitlist & Summary sheets"
+              onClick={onExportApi}
+              disabled={isExporting}
+              className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors disabled:opacity-50"
+              title="Export results from backend API (/match/export)"
             >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>Export .xlsx</span>
+              {isExporting ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Download className="w-3.5 h-3.5" />
+              )}
+              <span>{isExporting ? 'Exporting...' : 'Export Results'}</span>
             </button>
           </div>
         </div>

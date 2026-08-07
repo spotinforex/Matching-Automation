@@ -27,6 +27,7 @@ export default function App() {
   const [isUploadingYp, setIsUploadingYp] = useState<boolean>(false);
   const [isUploadingMcp, setIsUploadingMcp] = useState<boolean>(false);
   const [isMatching, setIsMatching] = useState<boolean>(false);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
 
   const [hopLimit, setHopLimit] = useState<number>(3);
   const [matchResponse, setMatchResponse] = useState<MatchRunResponse | null>(null);
@@ -159,6 +160,27 @@ export default function App() {
     }
   };
 
+  // Handle Export results from backend API (/match/export)
+  const handleExportApi = async () => {
+    setIsExporting(true);
+    try {
+      const blob = await apiService.exportResults();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `match_results_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      showNotification('success', 'Match results downloaded from API successfully');
+    } catch (err: any) {
+      showNotification('error', err.message || 'Export API request failed');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-orange-600 selection:text-white">
       {/* Top Header */}
@@ -258,6 +280,8 @@ export default function App() {
                 setSelectedResultItem(item);
                 setIsWaitlistModal(isWaitlist);
               }}
+              onExportApi={handleExportApi}
+              isExporting={isExporting}
             />
           </section>
         )}

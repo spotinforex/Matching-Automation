@@ -168,7 +168,7 @@ def build_results_workbook(
     ws_matches = wb.active
     ws_matches.title = "Matches"
     match_headers = [
-        "SN", "YP ID YES", "YP NAME", "YP TRADE AREA", "YP ADDRESS", "YP LANDMARK",
+        "SN", "YP ID", "YP NAME", "YP TRADE AREA", "YP ADDRESS", "YP LANDMARK",
         "YP PHONE NUMBER", "MCP ID", "MCP NAME", "MCP ADDRESS", "MCP LANDMARK",
         "MCP TRADE AREA", "LANDMARK CENTROID", "TRAVEL TIME (MINS)", "MATCH ROUND", "STATUS",
     ]
