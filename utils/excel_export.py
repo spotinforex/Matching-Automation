@@ -168,9 +168,10 @@ def build_results_workbook(
     ws_matches = wb.active
     ws_matches.title = "Matches"
     match_headers = [
-        "SN", "YP ID", "YP NAME", "YP TRADE AREA", "YP ADDRESS", "YP LANDMARK",
-        "YP PHONE NUMBER", "MCP ID", "MCP NAME", "MCP ADDRESS", "MCP LANDMARK",
-        "MCP TRADE AREA", "LANDMARK CENTROID", "TRAVEL TIME (MINS)", "MATCH ROUND", "STATUS",
+        "SN", "YP ID", "YP NAME", "YP GENDER", "YP PWD", "YP TRADE AREA", "YP TRADE TYPE",
+        "YP ADDRESS", "YP LANDMARK", "YP PHONE NUMBER", "MCP ID", "MCP NAME",
+        "MCP GENDER", "MCP TRADE AREA", "MCP TRADE TYPE", "MCP ADDRESS",
+        "MCP LANDMARK", "LANDMARK CENTROID", "TRAVEL TIME (MINS)", "MATCH ROUND", "STATUS",
     ]
 
     match_rows = []
@@ -190,15 +191,20 @@ def build_results_workbook(
             sn,
             m.yp_id,
             _field(yp, "name"),
+            _field(yp, "gender"),
+            "Yes" if _field(yp, "is_pwd") else "No",
             _field(yp, "skill"),
+            _field(yp, "trade_type") if hasattr(yp, "trade_type") else "",
             _field(yp, "address"),
             _field(yp, "landmark"),
             _field(yp, "phone_number"),
             m.mcp_id,
             _field(mcp, "name"),
+            _field(mcp, "gender"),
+            _field(mcp, "skill"),
+            _field(mcp, "trade_type") if hasattr(mcp, "trade_type") else "",
             _field(mcp, "address"),
             _field(mcp, "landmark"),
-            _field(mcp, "skill"),
             landmark_centroids.get(m.landmark, ""),
             round(m.travel_time, 1),
             m.round,
@@ -220,7 +226,10 @@ def build_results_workbook(
 
     # -- Waitlist sheet -----------------------------------------------------
     ws_waitlist = wb.create_sheet("Waitlist")
-    waitlist_headers = ["YP ID", "YP NAME", "PHONE NUMBER", "REASON", "LANDMARK", "WAITLISTED"]
+    waitlist_headers = [
+        "YP ID", "YP NAME", "YP GENDER", "YP PWD", "YP TRADE AREA", "YP TRADE TYPE",
+        "PHONE NUMBER", "REASON", "LANDMARK", "WAITLISTED"
+    ]
 
     waitlist_rows = []
     for w in result.waitlist:
@@ -228,6 +237,10 @@ def build_results_workbook(
         waitlist_rows.append([
             w.yp_id,
             _field(yp, "name"),
+            _field(yp, "gender"),
+            "Yes" if _field(yp, "is_pwd") else "No",
+            _field(yp, "skill"),
+            _field(yp, "trade_type") if hasattr(yp, "trade_type") else "",
             _field(yp, "phone_number"),
             w.reason,
             _field(yp, "landmark"),

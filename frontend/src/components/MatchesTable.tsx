@@ -14,6 +14,7 @@ import {
   UserX,
   UserCheck,
   RefreshCw,
+  X,
 } from 'lucide-react';
 
 interface MatchesTableProps {
@@ -163,8 +164,17 @@ export const MatchesTable: React.FC<MatchesTableProps> = ({
                 setCurrentPage(1);
               }}
               placeholder={activeTab === 'matches' ? "Search YP ID, MCP ID, Landmark..." : "Search YP ID, reason..."}
-              className="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 rounded-lg pl-9 pr-3 py-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-orange-500"
+              className="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 rounded-lg pl-9 pr-8 py-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-orange-500"
             />
+            {searchTerm && (
+              <button
+                onClick={() => { setSearchTerm(''); setCurrentPage(1); }}
+                type="button"
+                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           {/* Round Filter (For Matches) */}

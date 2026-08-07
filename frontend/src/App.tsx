@@ -30,6 +30,8 @@ export default function App() {
   const [isExporting, setIsExporting] = useState<boolean>(false);
 
   const [hopLimit, setHopLimit] = useState<number>(3);
+  const [matchCap, setMatchCap] = useState<number | null>(null);
+  const [shortlistSize, setShortlistSize] = useState<number>(10);
   const [matchResponse, setMatchResponse] = useState<MatchRunResponse | null>(null);
 
   // Modal inspection
@@ -140,7 +142,7 @@ export default function App() {
         prev[4]
       ]);
 
-      const res = await apiService.runMatch(hopLimit);
+      const res = await apiService.runMatch(hopLimit, matchCap, shortlistSize);
 
       setPipelineSteps(prev => [
         prev[0],
@@ -230,6 +232,10 @@ export default function App() {
           isMatching={isMatching}
           hopLimit={hopLimit}
           onHopLimitChange={setHopLimit}
+          matchCap={matchCap}
+          onMatchCapChange={setMatchCap}
+          shortlistSize={shortlistSize}
+          onShortlistSizeChange={setShortlistSize}
           onUploadYP={handleUploadYP}
           onUploadMCP={handleUploadMCP}
           onRunMatch={handleRunMatch}

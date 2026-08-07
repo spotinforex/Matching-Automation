@@ -137,8 +137,8 @@ export const BackendSettingsModal: React.FC<BackendSettingsModalProps> = ({
                 <span className="text-slate-500">Multipart .xlsx → &#123;"loaded": number&#125;</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-emerald-700 font-bold">POST /match/run?HOP_LIMIT=3</span>
-                <span className="text-slate-500">Geocode + Hop Match → MatchRunResponse</span>
+                <span className="text-emerald-700 font-bold">POST /match/run</span>
+                <span className="text-slate-500">?HOP_LIMIT=3&MATCH_CAP=...&SHORTLIST_SIZE=10</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-blue-700 font-bold">GET /health</span>

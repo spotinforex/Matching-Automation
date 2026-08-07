@@ -7,7 +7,14 @@
     "landmark": "Which_cluster_is_nearest_to_you_2",
     "trade": "which_area_of_the_fashion_industry_did_you_register_for2",
     "phone_number": "What_is_your_number_sms",
-    "proceed_flag": "should_participant_proceed"
+    "proceed_flag": "should_participant_proceed",
+    "gender": "what_is_your_sex",
+    "pwd": "do_you_have_any_medical_conditions",
+    "garment_subtype": "garment_specialization3",
+    "footwear_subtype": "If_footwear_production2",
+    "leather_bag_flag": "If_leather_bag_production4",
+    "leather_belt_flag": "if_leather_belt3",
+    "leather_wallet_flag": "if_leather_waller4"
   },
   "mcp_columns": {
     "id": "MCP Code",
@@ -16,11 +23,15 @@
     "landmark": "Cluster",
     "trade": "Trade area",
     "mcp_requested_capacity": "MCP Choice",
-    "recommended_capacity": "MERL Recommendation"
+    "recommended_capacity": "MERL Recommendation",
+    "gender": "Gender",
+    "garment_subtype": "What kind of products do you make?",
+    "footwear_subtype": "What kind of products do you make?",
+    "leather_subtype": "Who are your products specifically made for?"
   },
   "trade_canonical_map": {
-    "footwear_production": ["footwear"],
-    "leather_bag_production": ["leather"],
-    "garment_making": ["garment"]
+    "garment": ["garment"],
+    "footwear": ["footwear", "shoe"],
+    "leather": ["leather"]
   }
 }

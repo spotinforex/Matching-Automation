@@ -1,6 +1,6 @@
 import { HealthResponse, MatchRunResponse, UploadResponse } from '../types';
 
-export const DEFAULT_BACKEND_URL = 'https://matching-automation-309037219198.us-east1.run.app';
+export const DEFAULT_BACKEND_URL = 'http://localhost:8000';
 
 export class ApiService {
   private baseUrl: string;
@@ -72,8 +72,19 @@ export class ApiService {
     return await response.json();
   }
 
-  public async runMatch(hopLimit: number = 3): Promise<MatchRunResponse> {
-    const response = await fetch(`${this.baseUrl}/match/run?HOP_LIMIT=${hopLimit}`, {
+  public async runMatch(
+    hopLimit: number = 3,
+    matchCap?: number | null,
+    shortlistSize: number = 10
+  ): Promise<MatchRunResponse> {
+    const params = new URLSearchParams();
+    params.append('HOP_LIMIT', hopLimit.toString());
+    if (matchCap !== undefined && matchCap !== null && !isNaN(matchCap) && matchCap > 0) {
+      params.append('MATCH_CAP', matchCap.toString());
+    }
+    params.append('SHORTLIST_SIZE', shortlistSize.toString());
+
+    const response = await fetch(`${this.baseUrl}/match/run?${params.toString()}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

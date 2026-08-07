@@ -145,7 +145,7 @@ async def upload_mcp(file: UploadFile = File(...)):
 
 
 @app.post("/match/run", response_model=MatchRunResponse)
-def run_match(HOP_LIMIT: int = 3):
+def run_match(HOP_LIMIT: int = 3, MATCH_CAP: int | None = None, SHORTLIST_SIZE: int = 10):
     if not state["yps"]:
         raise HTTPException(400, "No YP data loaded — call /upload/yp first")
     if not state["mcps"]:
@@ -162,6 +162,8 @@ def run_match(HOP_LIMIT: int = 3):
         state["mcps"],
         landmark_order,
         hop_limit=HOP_LIMIT,
+        match_cap=MATCH_CAP,
+        shortlist_size=SHORTLIST_SIZE,
     )
 
     matches = [MatchResult(**m) for m in result["matches"]]

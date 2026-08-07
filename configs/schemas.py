@@ -9,6 +9,9 @@ class YoungProfessional(BaseModel):
     address: str
     landmark: str
     phone_number: Optional[str] = None
+    gender: Optional[str] = None
+    is_pwd: bool = False
+    trade_type: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
@@ -19,6 +22,8 @@ class MCP(BaseModel):
     skill: str
     address: str
     landmark: str
+    gender: Optional[str] = None
+    trade_type: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     capacity: int = 5
