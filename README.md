@@ -84,15 +84,3 @@ reproduce the issue locally. Set the log level in `main.py`'s
 `logging.basicConfig(...)` call (currently `DEBUG`; drop to `INFO` to reduce
 noise in production).
 
-## Known limitations / next steps
-
-- In memory state (see note above) — needs a real datastore for multi user
-  or multi instance use.
-- No maximum travel time cutoff — a YP can currently be matched to an MCP
-  even if the nearest available option is very far away, rather than being
-  waitlisted with a "too far" reason.
-- Geocoding is sequential per address, so a large batch with many cache
-  misses can take a while; this is the main driver of total run time.
-- The matching pipeline is now more configurable, but the UI does not yet
-  expose every tuning knob directly; those values can still be set through
-  the API parameters when needed.
