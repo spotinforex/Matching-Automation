@@ -141,12 +141,20 @@ export const BackendSettingsModal: React.FC<BackendSettingsModalProps> = ({
                 <span className="text-slate-500">?HOP_LIMIT=3&MATCH_CAP=...&SHORTLIST_SIZE=10</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-blue-700 font-bold">GET /health</span>
-                <span className="text-slate-500">Liveness check → &#123;"status": "ok"&#125;</span>
-              </div>
-              <div className="flex items-center justify-between">
                 <span className="text-blue-700 font-bold">GET /match/export</span>
                 <span className="text-slate-500">Download formatted .xlsx workbook</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-emerald-700 font-bold">POST /evaluation/compare</span>
+                <span className="text-slate-500">Compare manual match → drift report JSON</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-blue-700 font-bold">GET /evaluation/export</span>
+                <span className="text-slate-500">Download evaluation report .xlsx</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-blue-700 font-bold">GET /health</span>
+                <span className="text-slate-500">Liveness check → &#123;"status": "ok"&#125;</span>
               </div>
             </div>
           </div>

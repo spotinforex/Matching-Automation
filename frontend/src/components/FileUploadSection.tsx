@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Upload, FileSpreadsheet, CheckCircle, Play, Sliders, AlertCircle, RefreshCw, Database } from 'lucide-react';
+import { Upload, FileSpreadsheet, CheckCircle, Play, Sliders, AlertCircle, RefreshCw, Database, BookOpen, ChevronDown, ChevronUp, ShieldCheck } from 'lucide-react';
 
 interface FileUploadSectionProps {
   ypLoadedCount: number | null;
@@ -43,6 +43,7 @@ export const FileUploadSection: React.FC<FileUploadSectionProps> = ({
 
   const [ypDragOver, setYpDragOver] = useState(false);
   const [mcpDragOver, setMcpDragOver] = useState(false);
+  const [showSchemaGuide, setShowSchemaGuide] = useState(false);
 
   const handleYpDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -207,6 +208,113 @@ export const FileUploadSection: React.FC<FileUploadSectionProps> = ({
             )}
           </div>
         </div>
+      </div>
+
+      {/* Column Schema & Verification Reference Banner */}
+      <div className="bg-slate-50 border border-slate-200/90 rounded-xl overflow-hidden transition-all">
+        <button
+          type="button"
+          onClick={() => setShowSchemaGuide(!showSchemaGuide)}
+          className="w-full px-5 py-3 flex items-center justify-between text-left hover:bg-slate-100/80 transition-colors"
+        >
+          <div className="flex items-center space-x-2.5">
+            <ShieldCheck className="w-4 h-4 text-orange-600" />
+            <span className="text-xs font-bold text-slate-800">
+              Required Excel Column Headers & Automated Resolution Rules
+            </span>
+            <span className="text-[10px] bg-orange-100 text-orange-800 font-semibold px-2 py-0.5 rounded border border-orange-200">
+              Strict Safety Mode
+            </span>
+          </div>
+          <div className="flex items-center space-x-1 text-xs font-medium text-slate-500">
+            <span>{showSchemaGuide ? 'Hide Reference' : 'View Schema Rules'}</span>
+            {showSchemaGuide ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </div>
+        </button>
+
+        {showSchemaGuide && (
+          <div className="p-5 border-t border-slate-200/80 bg-white space-y-4 text-xs text-slate-600">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* YP Columns */}
+              <div className="bg-slate-50 p-3.5 rounded-lg border border-slate-200 space-y-2">
+                <div className="flex items-center justify-between font-bold text-slate-900 text-[11px] uppercase tracking-wider">
+                  <span className="flex items-center space-x-1 text-orange-700">
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <span>YP File Canonical Fields</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400">data_loader.py</span>
+                </div>
+                <ul className="space-y-1 font-mono text-[11px] text-slate-700">
+                  <li className="flex items-center justify-between">
+                    <span><strong className="text-rose-700">id</strong> (Unique Code/ID)</span>
+                    <span className="text-[9px] bg-rose-100 text-rose-800 px-1 rounded">REQUIRED</span>
+                  </li>
+                  <li className="flex items-center justify-between">
+                    <span><strong className="text-rose-700">name</strong> (Participant Name)</span>
+                    <span className="text-[9px] bg-rose-100 text-rose-800 px-1 rounded">REQUIRED</span>
+                  </li>
+                  <li className="flex items-center justify-between">
+                    <span><strong className="text-rose-700">address</strong> (Residential Address)</span>
+                    <span className="text-[9px] bg-rose-100 text-rose-800 px-1 rounded">REQUIRED</span>
+                  </li>
+                  <li className="flex items-center justify-between">
+                    <span><strong className="text-rose-700">landmark</strong> (Nearest Cluster/Landmark)</span>
+                    <span className="text-[9px] bg-rose-100 text-rose-800 px-1 rounded">REQUIRED</span>
+                  </li>
+                  <li className="flex items-center justify-between">
+                    <span><strong className="text-rose-700">trade</strong> (Fashion Skill / Sector)</span>
+                    <span className="text-[9px] bg-rose-100 text-rose-800 px-1 rounded">REQUIRED</span>
+                  </li>
+                  <li className="flex items-center justify-between text-slate-500 font-sans text-[10px]">
+                    <span>proceed_flag, gender, pwd, garment_subtype, footwear_subtype, leather_*</span>
+                    <span className="text-[9px] bg-slate-200 text-slate-700 px-1 rounded">OPTIONAL</span>
+                  </li>
+                </ul>
+              </div>
+
+              {/* MCP Columns */}
+              <div className="bg-slate-50 p-3.5 rounded-lg border border-slate-200 space-y-2">
+                <div className="flex items-center justify-between font-bold text-slate-900 text-[11px] uppercase tracking-wider">
+                  <span className="flex items-center space-x-1 text-orange-700">
+                    <Database className="w-3.5 h-3.5" />
+                    <span>MCP File Canonical Fields</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400">data_loader.py</span>
+                </div>
+                <ul className="space-y-1 font-mono text-[11px] text-slate-700">
+                  <li className="flex items-center justify-between">
+                    <span><strong className="text-rose-700">id</strong> (MCP Code/ID)</span>
+                    <span className="text-[9px] bg-rose-100 text-rose-800 px-1 rounded">REQUIRED</span>
+                  </li>
+                  <li className="flex items-center justify-between">
+                    <span><strong className="text-rose-700">name</strong> (Center/Owner Name)</span>
+                    <span className="text-[9px] bg-rose-100 text-rose-800 px-1 rounded">REQUIRED</span>
+                  </li>
+                  <li className="flex items-center justify-between">
+                    <span><strong className="text-rose-700">address</strong> (Workshop Address)</span>
+                    <span className="text-[9px] bg-rose-100 text-rose-800 px-1 rounded">REQUIRED</span>
+                  </li>
+                  <li className="flex items-center justify-between">
+                    <span><strong className="text-rose-700">landmark</strong> (Cluster Location)</span>
+                    <span className="text-[9px] bg-rose-100 text-rose-800 px-1 rounded">REQUIRED</span>
+                  </li>
+                  <li className="flex items-center justify-between">
+                    <span><strong className="text-rose-700">trade</strong> (Master Specialization)</span>
+                    <span className="text-[9px] bg-rose-100 text-rose-800 px-1 rounded">REQUIRED</span>
+                  </li>
+                  <li className="flex items-center justify-between text-slate-500 font-sans text-[10px]">
+                    <span>recommended_capacity (Cap), gender, subtypes</span>
+                    <span className="text-[9px] bg-slate-200 text-slate-700 px-1 rounded">OPTIONAL</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-500 italic leading-relaxed">
+              * Note: Column resolution uses signature cache → configured alias (<code>column_config.json</code>) → exact match → fuzzy match. If a required field resolves only via fuzzy matching, the backend raises an explicit resolution exception to prevent misattribution.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Matching Controls & Execution Bar */}

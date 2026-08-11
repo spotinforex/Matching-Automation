@@ -1,41 +1,35 @@
 {
-  "hard_cap_per_mcp": 10,
-  "yp_columns": {
+  "2ba05403dd14df85": {
     "id": "participant_code",
     "name": "full_name",
     "address": "residential_address",
     "landmark": "Which_cluster_is_nearest_to_you",
     "trade": "Trade_Area",
     "phone_number": "What_is_your_number_sms",
-    "proceed_flag": "should_participant_proceed",
+    "proceed_flag": null,
     "gender": "Gender",
     "pwd": "PWD Status",
     "garment_subtype": "garment_specialization",
     "footwear_subtype": "If_footwear_production",
+    "leather_subtype": null,
     "leather_bag_flag": "If_leather_bag_production",
     "leather_belt_flag": "if_leather_belt",
     "leather_wallet_flag": "if_leather_waller"
   },
-  "mcp_columns": {
+  "797b38ee1c709245": {
     "id": "MCP_Code",
     "name": "Full_Name",
     "address": "Business_address",
     "landmark": "Cluster",
     "trade": "Trade_area",
+    "gender": "Gender",
     "mcp_requested_capacity": "MCP_Choice",
     "recommended_capacity": "MERL_Recommendation",
-    "gender": "Gender",
     "garment_subtype": "What_kind_of products_do_you_make?",
     "footwear_subtype": "What_kind_of products_do_you_make?",
-    "leather_subtype": "Who_are_your_products_specifically_made_for?"
-  },
-  "trade_canonical_map": {
-    "garment": ["garment"],
-    "footwear": ["footwear", "shoe"],
-    "leather": ["leather"]
-  },
-  "manual_match_columns": {
-    "yp_id": "participant_code",
-    "mcp_id": "MCP_Code"
+    "leather_subtype": "Who_are_your_products_specifically_made_for?",
+    "leather_bag_flag": null,
+    "leather_belt_flag": null,
+    "leather_wallet_flag": null
   }
 }

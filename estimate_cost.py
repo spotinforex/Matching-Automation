@@ -19,7 +19,7 @@ How it works:
 
 Usage:
     # Dry run against synthetic data shaped like your real dataset
-    python estimate_cost.py --yps 1069 --mcps 240 --landmarks 12 --skills 4
+    python estimate_cost.py --yps 1069 --mcps 267 --landmarks 15 --skills 7
 
     # Dry run against your REAL uploaded data (requires utils/data_loader.py
     # to be importable, i.e. run this from your project root)

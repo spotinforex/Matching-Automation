@@ -5,9 +5,22 @@ Reads the two program Excel exports and returns lists of the canonical
 YoungProfessional / MCP pydantic models (schemas.py) that the rest of the
 app (matcher.py, distance_service.py, main.py) works with.
 
-All column names, trade-matching rules, and the per-MCP hard cap live in
-column_config.json (not in this file) — if the source spreadsheets change
-column headers, edit that JSON file, not this script.
+Column names are resolved dynamically via column_resolver.py — signature
+cache -> configured name (column_config.json) -> alias -> fuzzy match —
+instead of requiring an exact configured name for every field on every
+run. column_config.json is still the source of truth when it's right, but
+small header drift (renames, casing, whitespace) no longer needs a manual
+edit to keep working. See column_resolver.py for the full strategy.
+
+Two-phase usage for a "confirm before you trust it" workflow:
+    preview = preview_yp_columns(path)          # show a person the guesses
+    ... person confirms / edits mapping ...
+    confirm_yp_mapping(path, confirmed_mapping)  # cache it for next time
+    yps = load_yps(path)                         # now resolves via cache
+
+Or just call load_yps()/load_mcps() directly — resolution happens
+automatically, best-effort, with every non-"configured"/"cache" guess
+logged so it's traceable.
 """
 
 import logging
@@ -18,18 +31,40 @@ import re
 import pandas as pd
 
 from configs.schemas import YoungProfessional, MCP
+from utils import column_resolver
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG_PATH = Path.cwd() / "configs" / "column_config.json"
 
-# Candidate header names used ONLY when a column isn't declared in
-# column_config.json (or the declared name isn't actually present in the
-# sheet). The configured name always wins when it's usable — see
-# _resolve_flag_column().
-_GENDER_CANDIDATES = ["gender", "sex", "gender_of_yp", "gender_of_participant"]
-_PWD_CANDIDATES = ["pwd", "person_with_disability", "disability", "is_pwd"]
+# Every logical field the loaders know how to resolve for each file.
+# Required fields (below) must resolve to something or loading fails;
+# everything else is optional and simply comes back None/empty if unresolved.
+YP_FIELD_KEYS = [
+    "id", "name", "address", "landmark", "trade",
+    "phone_number", "proceed_flag", "gender", "pwd",
+    "garment_subtype", "footwear_subtype", "leather_subtype",
+    "leather_bag_flag", "leather_belt_flag", "leather_wallet_flag",
+]
+MCP_FIELD_KEYS = [
+    "id", "name", "address", "landmark", "trade",
+    "gender", "mcp_requested_capacity", "recommended_capacity",
+    "garment_subtype", "footwear_subtype", "leather_subtype",
+    "leather_bag_flag", "leather_belt_flag", "leather_wallet_flag",
+]
+REQUIRED_FIELDS = {"id", "name", "address", "landmark", "trade"}
+
+# Fields that GATE which rows survive (currently just proceed_flag, which
+# filters rows in/out) are just as dangerous as required fields when
+# misresolved — a wrong fuzzy match here doesn't corrupt identity, it
+# silently drops or keeps the wrong people. E.g. "status" as a proceed_flag
+# alias matched "PWD Status" here (both contain the token "status"), and
+# filtering on disability status instead of eligibility dropped 10 YPs to 2.
+# These fields never auto-trust a fuzzy match either; unlike required
+# fields, missing/unconfirmed here just means "skip that filter" (safe
+# default) rather than a hard failure.
+GATING_FIELDS = {"proceed_flag"}
 
 # Below this fraction of shared landmark/cluster values between the YP and
 # MCP files, geographic matching will fail for most people, so we warn
@@ -56,6 +91,103 @@ def load_config(config_path: str = DEFAULT_CONFIG_PATH) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Column resolution (preview / confirm / resolve)
+# ---------------------------------------------------------------------------
+
+def _resolve_columns(df: pd.DataFrame, configured_cols: dict, field_keys: list[str], source_label: str) -> dict:
+    resolutions = column_resolver.resolve_all(list(df.columns), configured_cols, field_keys, source_label)
+    mapping = column_resolver.resolutions_to_mapping(resolutions)
+    resolution_by_field = {r.field: r for r in resolutions}
+
+    missing_required = [f for f in REQUIRED_FIELDS if f in field_keys and not mapping.get(f)]
+
+    # Required fields (id/name/address/landmark/trade) are the ones where a
+    # wrong guess is catastrophic — a misresolved "id" column previously
+    # cascaded into false duplicate-detection and silently dropped ~78% of
+    # real YPs. A fuzzy match (however plausible it looks) is NOT trusted
+    # automatically for these; it must go through preview_*_columns() /
+    # confirm_*_mapping() first. Optional fields (gender, pwd, subtypes)
+    # still auto-apply fuzzy matches — being wrong there loses metadata,
+    # not people.
+    unconfirmed_required_fuzzy = [
+        f for f in REQUIRED_FIELDS
+        if f in field_keys and resolution_by_field[f].method == "fuzzy"
+    ]
+
+    if missing_required or unconfirmed_required_fuzzy:
+        preview = column_resolver.resolutions_to_preview(resolutions)
+        problem_fields = sorted(set(missing_required) | set(unconfirmed_required_fuzzy))
+        raise ValueError(
+            f"{source_label}: required column(s) {problem_fields} could not be resolved with "
+            f"confidence (missing entirely, or only a fuzzy guess with no exact/alias/cache hit). "
+            f"Full resolution attempt: {preview}. Actual headers in file: {list(df.columns)}. "
+            f"Call preview_yp_columns()/preview_mcp_columns() to review the guesses, then "
+            f"confirm_yp_mapping()/confirm_mcp_mapping() with the corrected mapping to proceed — "
+            f"required fields are never auto-trusted from a fuzzy match alone."
+        )
+
+    # Gating fields (proceed_flag) get the same "never trust fuzzy" treatment,
+    # but downgrade to unresolved (None) rather than a hard failure — a missing
+    # proceed_flag just means "don't filter on it", which is safe. Trusting a
+    # wrong fuzzy guess here is NOT safe (see comment on GATING_FIELDS above).
+    for f in GATING_FIELDS:
+        if f in field_keys and resolution_by_field[f].method == "fuzzy":
+            logger.warning(
+                "%s: field '%s' only had a fuzzy match (%r, confidence %.2f) — not trusted "
+                "automatically since this field gates which rows survive. Treating as unresolved "
+                "(no filtering applied). Confirm via confirm_yp_mapping()/confirm_mcp_mapping() "
+                "if this column is actually correct.",
+                source_label, f, resolution_by_field[f].column, resolution_by_field[f].confidence,
+            )
+            mapping[f] = None
+
+    # Only cache mappings that were fully deterministic (every field resolved via
+    # cache/configured/alias — nothing fuzzy). A mapping containing any fuzzy guess
+    # is NOT cached here; it only gets cached once a person explicitly confirms it
+    # via confirm_yp_mapping()/confirm_mcp_mapping(). This is what makes fuzzy
+    # matches transient (used for this run, logged, but never silently "sticky").
+    all_deterministic = all(r.method in ("cache", "configured", "alias") for r in resolutions if r.column)
+    if all_deterministic:
+        signature = column_resolver.compute_signature(list(df.columns))
+        if column_resolver.get_cached_mapping(signature) is None:
+            column_resolver.save_confirmed_mapping(signature, mapping, learn_aliases=False)
+
+    return mapping
+
+
+def preview_yp_columns(path: str, config_path: str = DEFAULT_CONFIG_PATH) -> list[dict]:
+    """Returns a preview (field, column, method, confidence) for every YP
+    field WITHOUT loading/parsing rows — for a 'confirm before you trust
+    it' UI step. Does not write to the cache."""
+    config = load_config(config_path)
+    df = pd.read_excel(path, dtype=str, nrows=0)  # headers only
+    resolutions = column_resolver.resolve_all(list(df.columns), config["yp_columns"], YP_FIELD_KEYS, "YP file")
+    return column_resolver.resolutions_to_preview(resolutions)
+
+
+def preview_mcp_columns(path: str, config_path: str = DEFAULT_CONFIG_PATH) -> list[dict]:
+    config = load_config(config_path)
+    df = pd.read_excel(path, dtype=str, nrows=0)
+    resolutions = column_resolver.resolve_all(list(df.columns), config["mcp_columns"], MCP_FIELD_KEYS, "MCP file")
+    return column_resolver.resolutions_to_preview(resolutions)
+
+
+def confirm_yp_mapping(path: str, confirmed_mapping: dict[str, str]) -> None:
+    """Call after a person reviews preview_yp_columns() and confirms/edits
+    it, to cache the mapping (keyed by this file's header signature) and
+    learn each confirmed column as a new alias for next time."""
+    df = pd.read_excel(path, dtype=str, nrows=0)
+    signature = column_resolver.compute_signature(list(df.columns))
+    column_resolver.save_confirmed_mapping(signature, confirmed_mapping, learn_aliases=True)
+
+
+def confirm_mcp_mapping(path: str, confirmed_mapping: dict[str, str]) -> None:
+    df = pd.read_excel(path, dtype=str, nrows=0)
+    signature = column_resolver.compute_signature(list(df.columns))
+    column_resolver.save_confirmed_mapping(signature, confirmed_mapping, learn_aliases=True)
+
+
+# ---------------------------------------------------------------------------
 # Normalization helpers
 # ---------------------------------------------------------------------------
 
@@ -71,6 +203,31 @@ def _clean_optional_str(value):
     genuinely absent phone number stays None rather than an empty string."""
     cleaned = _clean_str(value)
     return cleaned or None
+
+
+def _find_column_name(df: pd.DataFrame, candidates: list[str]) -> str | None:
+    """Finds the first matching column for a list of candidate names.
+
+    Matching is case-insensitive and ignores whitespace, underscores, and
+    hyphens, so headers like 'YP ID' or 'yp_id' can be resolved from a
+    candidate list such as ['yp_id', 'yp code'].
+    """
+    def normalize(text: str) -> str:
+        return re.sub(r"[\s_-]+", "", str(text).strip()).lower()
+
+    normalized_columns = {normalize(col): col for col in df.columns}
+    for candidate in candidates:
+        norm = normalize(candidate)
+        if norm in normalized_columns:
+            return normalized_columns[norm]
+
+    for candidate in candidates:
+        norm = normalize(candidate)
+        for normalized_col, original_col in normalized_columns.items():
+            if norm in normalized_col or normalized_col in norm:
+                return original_col
+
+    return None
 
 
 def _normalize_landmark(value) -> str:
@@ -123,11 +280,9 @@ def _normalize_leather_subtype(row, cols: dict, prefix: str) -> str | None:
     """
     Determines which leather product a row is about: bag / wallet / belt.
     Two strategies, tried in order:
-    1. Dedicated flag columns (e.g. the YP file's branching survey columns
-       "If_leather_bag_production4" / "if_leather_belt3" /
-       "if_leather_waller4" — populated only for whichever subtype was
-       actually selected). Configure these as f"{prefix}_bag_flag",
-       f"{prefix}_belt_flag", f"{prefix}_wallet_flag" in column_config.json.
+    1. Dedicated flag columns (branching survey columns populated only for
+       whichever subtype was actually selected) — resolved fields
+       f"{prefix}_bag_flag" / f"{prefix}_belt_flag" / f"{prefix}_wallet_flag".
     2. A single free-text subtype column (f"{prefix}_subtype"), scanned for
        "bag"/"wallet"/"belt" keywords — used when a source (e.g. an MCP
        export) only has one generic follow-up question instead of three
@@ -211,80 +366,12 @@ def _resolve_trade(row, cols: dict, trade_canonical_map: dict, source_label: str
 
 
 def _get_column(row, cols: dict, key: str):
+    """cols here is a resolved mapping (field -> actual column name or
+    None), produced by _resolve_columns()."""
     column_name = cols.get(key)
     if column_name is None:
         return None
     return row.get(column_name)
-
-
-def _find_column_name(df: pd.DataFrame, candidates: list[str]) -> str | None:
-    for candidate in candidates:
-        if candidate in df.columns:
-            return candidate
-    normalized = {str(col).strip().lower(): col for col in df.columns}
-    for candidate in candidates:
-        for col_name, original_name in normalized.items():
-            if col_name == candidate.strip().lower():
-                return original_name
-    return None
-
-
-def _resolve_flag_column(
-    df: pd.DataFrame, cols: dict, key: str, candidates: list[str], source_label: str
-) -> str | None:
-    """
-    Resolves the actual dataframe column to use for an optional flag field
-    (gender, pwd, ...). The name declared in column_config.json is always
-    tried first; the hardcoded candidate list is only a fallback for when
-    the config doesn't declare a name (or declares one that isn't actually
-    present in this sheet).
-
-    Previously the configured name (cols[key]) was never consulted at all —
-    the loader always guessed from a hardcoded, exact-match-only candidate
-    list, silently producing None whenever the real header didn't happen to
-    match one of those guesses (e.g. "what_is_your_sex" not matching
-    "sex"). That made the config value dead weight and gender/PWD fields
-    None more often than not.
-    """
-    configured_name = cols.get(key)
-    if configured_name and configured_name in df.columns:
-        return configured_name
-
-    fallback = _find_column_name(df, candidates)
-    if fallback is not None:
-        if configured_name:
-            logger.warning(
-                "%s: configured '%s' column %r not found; falling back to "
-                "guessed column %r. Update column_config.json to avoid relying "
-                "on the guess.",
-                source_label, key, configured_name, fallback,
-            )
-        return fallback
-
-    if configured_name:
-        logger.warning(
-            "%s: configured '%s' column %r not found in spreadsheet, and no "
-            "fallback candidate matched either. This field will be blank/None "
-            "for every row. Check column_config.json against the actual "
-            "headers: %s",
-            source_label, key, configured_name, list(df.columns),
-        )
-    return None
-
-
-def _validate_columns(df: pd.DataFrame, cols: dict, source_label: str) -> None:
-    required_keys = {"id", "name", "address", "landmark", "trade"}
-    missing = [
-        f"{key} -> '{cols[key]}'"
-        for key in required_keys
-        if key in cols and cols[key] not in df.columns
-    ]
-    if missing:
-        raise ValueError(
-            f"{source_label}: configured column(s) not found in spreadsheet: "
-            f"{', '.join(missing)}. Check column_config.json against the actual headers: "
-            f"{list(df.columns)}"
-        )
 
 
 def _unique_fallback_id(prefix: str, row_index: int, seen_ids: set) -> str:
@@ -294,8 +381,7 @@ def _unique_fallback_id(prefix: str, row_index: int, seen_ids: set) -> str:
     "YP_0004"-style; this generates "YP_GEN_0004"-style), then falls back
     further with a numeric suffix in the rare case even that collides —
     guaranteeing uniqueness rather than trusting the format never overlaps
-    with real data, which is what silently caused two different people to
-    share the ID "YP_0001" before this fix.
+    with real data.
     """
     base = f"{prefix}_GEN_{row_index:04d}"
     candidate = base
@@ -323,17 +409,15 @@ def _register_id(entity_id: str, seen_ids: set, source_label: str) -> bool:
 # Cross-file sanity checks
 # ---------------------------------------------------------------------------
 
-def warn_on_landmark_mismatch(
-    yps: list[YoungProfessional], mcps: list[MCP]
-) -> float:
+def warn_on_landmark_mismatch(yps: list[YoungProfessional], mcps: list[MCP]) -> float:
     """
     Logs a warning if the YP and MCP files use largely non-overlapping
     landmark/cluster vocabularies, since landmark matching is an exact
     (lowercased) string match with no fuzzy logic — a low overlap here
     means most YPs will fail to match any MCP on location, silently,
     unless someone happens to notice downstream. Call this once both
-    load_yps() and load_mcps() have run (e.g. from main.py), since each
-    loader only sees one file on its own.
+    load_yps() and load_mcps() have run, since each loader only sees one
+    file on its own.
 
     Returns the overlap ratio (intersection / union of distinct landmark
     values) for callers that want to act on it programmatically too.
@@ -381,7 +465,6 @@ def warn_on_landmark_mismatch(
 
 def load_yps(path: str, only_proceeding: bool = True, config_path: str = DEFAULT_CONFIG_PATH) -> list[YoungProfessional]:
     config = load_config(config_path)
-    cols = config["yp_columns"]
     trade_map = config["trade_canonical_map"]
 
     # dtype=str prevents pandas from inferring numeric columns (IDs, phone
@@ -391,16 +474,11 @@ def load_yps(path: str, only_proceeding: bool = True, config_path: str = DEFAULT
     # reading everything as string up front is strictly safer than letting
     # pandas guess per-column types.
     df = pd.read_excel(path, dtype=str)
-    _validate_columns(df, cols, source_label=f"YP file ({path})")
+    cols = _resolve_columns(df, config["yp_columns"], YP_FIELD_KEYS, source_label=f"YP file ({path})")
 
     if only_proceeding and cols.get("proceed_flag") in df.columns:
         proceed = df[cols["proceed_flag"]].astype(str).str.strip().str.lower()
         df = df[proceed == "yes"]
-
-    # Resolved once per file, not per row: config's declared column wins if
-    # present, otherwise fall back to guessing from the header list.
-    gender_column = _resolve_flag_column(df, cols, "gender", _GENDER_CANDIDATES, source_label="YP file")
-    pwd_column = _resolve_flag_column(df, cols, "pwd", _PWD_CANDIDATES, source_label="YP file")
 
     seen_ids: set = set()
     yps: list[YoungProfessional] = []
@@ -412,13 +490,9 @@ def load_yps(path: str, only_proceeding: bool = True, config_path: str = DEFAULT
         address = _clean_str(_get_column(row, cols, "address"))
 
         # Duplicate-row detection MUST happen on the raw (possibly blank) id,
-        # before any fallback id is generated. Previously the fallback id was
-        # generated first, using the row index — which is unique per row by
-        # construction — so two genuinely duplicate rows that both had a
-        # blank id column got different generated ids and therefore
-        # different row_keys, meaning this check could never actually catch
-        # them. Keying on raw_id here means two blank-id rows with the same
-        # name/address correctly collide and get caught.
+        # before any fallback id is generated — otherwise two genuinely
+        # duplicate rows that both have a blank id get different generated
+        # ids (based on row index) and never collide here.
         row_key = (raw_id, name, address)
         if row_key in seen_rows:
             logger.warning(
@@ -443,12 +517,9 @@ def load_yps(path: str, only_proceeding: bool = True, config_path: str = DEFAULT
             )
             name = yp_id
 
-        gender = _clean_str(row.get(gender_column)) if gender_column else ""
-        is_pwd = False
-
-        pwd_value = _clean_str(row.get(pwd_column)) if pwd_column else ""
-        if pwd_value.lower() in {"yes", "true", "y", "1"}:
-            is_pwd = True
+        gender = _clean_str(_get_column(row, cols, "gender"))
+        pwd_value = _clean_str(_get_column(row, cols, "pwd"))
+        is_pwd = pwd_value.lower() in {"yes", "true", "y", "1"}
 
         skill, trade_value = _resolve_trade(row, cols, trade_map, source_label="YP file")
         yps.append(
@@ -471,12 +542,11 @@ def load_yps(path: str, only_proceeding: bool = True, config_path: str = DEFAULT
 
 def load_mcps(path: str, config_path: str = DEFAULT_CONFIG_PATH) -> list[MCP]:
     config = load_config(config_path)
-    cols = config["mcp_columns"]
     trade_map = config["trade_canonical_map"]
     hard_cap = config["hard_cap_per_mcp"]
 
     df = pd.read_excel(path, dtype=str)
-    _validate_columns(df, cols, source_label=f"MCP file ({path})")
+    cols = _resolve_columns(df, config["mcp_columns"], MCP_FIELD_KEYS, source_label=f"MCP file ({path})")
 
     id_column = cols["id"]
     before = len(df)
@@ -486,10 +556,6 @@ def load_mcps(path: str, config_path: str = DEFAULT_CONFIG_PATH) -> list[MCP]:
             "load_mcps(): dropped %d duplicate-id row(s) from %r (kept first occurrence of each id)",
             before - len(df), path,
         )
-
-    # Same fix as load_yps(): honor the configured column name first, only
-    # guess as a fallback.
-    gender_column = _resolve_flag_column(df, cols, "gender", _GENDER_CANDIDATES, source_label="MCP file")
 
     seen_ids: set = set()
     mcps: list[MCP] = []
@@ -514,13 +580,13 @@ def load_mcps(path: str, config_path: str = DEFAULT_CONFIG_PATH) -> list[MCP]:
         recommended = int(recommended) if pd.notna(recommended) else hard_cap
         capacity = max(0, min(hard_cap, recommended))
 
-        # NOTE: "mcp_requested_capacity" (MCP Choice) is configured in
-        # column_config.json but intentionally NOT used here — capacity is
-        # decided by recommended_capacity (MERL Recommendation) alone, per
-        # explicit decision. Left unread on purpose; not a bug/oversight.
+        # NOTE: "mcp_requested_capacity" (MCP Choice) is resolved but
+        # intentionally NOT used for capacity — capacity is decided by
+        # recommended_capacity (MERL Recommendation) alone, per explicit
+        # decision. Left unread on purpose; not a bug/oversight.
 
         skill, trade_value = _resolve_trade(row, cols, trade_map, source_label="MCP file")
-        gender = _clean_str(row.get(gender_column)) if gender_column else ""
+        gender = _clean_str(_get_column(row, cols, "gender"))
 
         mcps.append(
             MCP(

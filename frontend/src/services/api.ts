@@ -1,6 +1,6 @@
-import { HealthResponse, MatchRunResponse, UploadResponse } from '../types';
+import { HealthResponse, MatchRunResponse, UploadResponse, EvaluationReport } from '../types';
 
-export const DEFAULT_BACKEND_URL = 'https://matching-automation-309037219198.us-east1.run.app';
+export const DEFAULT_BACKEND_URL = 'http://localhost:8000';
 
 export class ApiService {
   private baseUrl: string;
@@ -38,6 +38,20 @@ export class ApiService {
     }
   }
 
+  private async parseResponseError(response: Response, defaultPrefix: string): Promise<Error> {
+    const errorText = await response.text();
+    let detailMessage = errorText;
+    try {
+      const parsed = JSON.parse(errorText);
+      if (parsed && parsed.detail) {
+        detailMessage = typeof parsed.detail === 'string' ? parsed.detail : JSON.stringify(parsed.detail);
+      }
+    } catch {
+      // Keep raw errorText if not JSON
+    }
+    return new Error(detailMessage || `${defaultPrefix}: ${response.statusText}`);
+  }
+
   public async uploadYP(file: File): Promise<UploadResponse> {
     const formData = new FormData();
     formData.append('file', file);
@@ -48,8 +62,7 @@ export class ApiService {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`YP Upload failed: ${errorText || response.statusText}`);
+      throw await this.parseResponseError(response, 'YP Upload failed');
     }
 
     return await response.json();
@@ -65,8 +78,7 @@ export class ApiService {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`MCP Upload failed: ${errorText || response.statusText}`);
+      throw await this.parseResponseError(response, 'MCP Upload failed');
     }
 
     return await response.json();
@@ -105,7 +117,44 @@ export class ApiService {
     });
 
     if (!response.ok) {
-      throw new Error(`Export failed: ${response.statusText}`);
+      const errorText = await response.text();
+      throw new Error(`Export failed: ${errorText || response.statusText}`);
+    }
+
+    return await response.blob();
+  }
+
+  public async compareEvaluation(
+    manualFile: File,
+    criteriaConfigJson?: string
+  ): Promise<EvaluationReport> {
+    const formData = new FormData();
+    formData.append('manual_match_file', manualFile);
+    if (criteriaConfigJson) {
+      formData.append('criteria_config_json', criteriaConfigJson);
+    }
+
+    const response = await fetch(`${this.baseUrl}/evaluation/compare`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Evaluation failed: ${errorText || response.statusText}`);
+    }
+
+    return await response.json();
+  }
+
+  public async exportEvaluationResults(): Promise<Blob> {
+    const response = await fetch(`${this.baseUrl}/evaluation/export`, {
+      method: 'GET',
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Evaluation export failed: ${errorText || response.statusText}`);
     }
 
     return await response.blob();
@@ -113,4 +162,5 @@ export class ApiService {
 }
 
 export const apiService = new ApiService();
+
 
