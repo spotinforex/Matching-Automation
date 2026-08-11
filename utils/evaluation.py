@@ -411,23 +411,9 @@ def compare_matches(
     """
     start = time.monotonic()
     config = {**DEFAULT_CRITERIA_CONFIG, **(config or {})}
-    logger.info(
-    "Distance check | YP=%s | manual_mcp=%s | "
-    "YP coords=(%s,%s) | Manual MCP coords=(%s,%s)",
-    yp.id,
-    manual_mcp_id,
-    yp.latitude,
-    yp.longitude,
-    manual_mcp.latitude if manual_mcp else None,
-    manual_mcp.longitude if manual_mcp else None,
-    )
     if distance_service is not None:
         needs_geocode = [p for p in list(yps) + list(mcps)
-        if (
-            getattr(p, "latitude", None) is None
-            or getattr(p, "longitude", None) is None
-        )
-    ]
+                         if getattr(p, "latitude", None) is None or getattr(p, "longitude", None) is None]
         if needs_geocode:
             logger.info("compare_matches(): %d record(s) missing coordinates, backfilling via distance_service", len(needs_geocode))
             Matcher(distance_service).geocode_missing(yps, mcps)
