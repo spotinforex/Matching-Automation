@@ -84,6 +84,12 @@ DEFAULT_CRITERIA_CONFIG = {
     "pwd_proximity_threshold_km": 3.0,
 }
 
+_WILDCARD_BY_CATEGORY = {
+    "garment": "both",
+    "footwear": "both",
+    "leather": "any",
+}
+
 def specialization_matches(yp_specialization, mcp_specialization):
     yp = _clean_str(yp_specialization).lower()
     mcp = _clean_str(mcp_specialization).lower()
@@ -94,8 +100,14 @@ def specialization_matches(yp_specialization, mcp_specialization):
     if yp == mcp:
         return True
 
-    # "Both" can serve either male or female.
-    if mcp == "both" and yp in {"male", "female"}:
+    yp_category, _, yp_subtype = yp.rpartition("_")
+    mcp_category, _, mcp_subtype = mcp.rpartition("_")
+
+    if not yp_category or not mcp_category or yp_category != mcp_category:
+        return False  # different trade area entirely
+
+    wildcard = _WILDCARD_BY_CATEGORY.get(yp_category)
+    if wildcard and (yp_subtype == wildcard or mcp_subtype == wildcard):
         return True
 
     return False
