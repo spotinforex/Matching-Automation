@@ -26,6 +26,22 @@ in-memory caches exactly:
 Geocoding failures (ValueError) are NOT cached — a transient failure today
 shouldn't permanently block a future retry.
 
+Connection resilience:
+    Supabase's pooler will drop idle server-side connections, and this
+    service can go idle for a while between DB lookups during a long
+    geocode_missing() batch (rate-limited/sleeping Google Maps calls in
+    between). Two things make that survivable:
+      1. We keep the ORIGINAL database_url string around ourselves rather
+         than relying on psycopg2.connection.dsn for reconnects — .dsn
+         redacts the password (since psycopg2 2.7), so reconnecting via
+         .dsn silently always fails auth.
+      2. Every DB round-trip goes through _execute(), which retries (with
+         exponential backoff — 1s, 2s, 4s, 8s by default) after forcing a
+         fresh connection whenever the query fails with an
+         OperationalError. This covers both "connection died mid-query"
+         and brief local DNS/network blips, which need a moment to clear
+         and will just fail again on an instant retry.
+
 Usage (see main.py for the actual wiring):
     inner = GoogleMapsDistanceService(api_key=GOOGLE_API_KEY)
     DISTANCE_SERVICE = CachedDistanceService(inner, database_url=DATABASE_URL)
@@ -33,9 +49,14 @@ Usage (see main.py for the actual wiring):
 Requires: psycopg2-binary (`uv add psycopg2-binary`)
 Env var:  DATABASE_URL (or SUPABASE_DB_URL) — a standard Postgres connection
           string, e.g. postgresql://user:pass@host:5432/postgres
+
+Note: use Supabase's session-mode pooler (port 5432), not the transaction-
+mode pooler (port 6543). A long-lived connection like this one, combined
+with the ON CONFLICT upserts below, expects session semantics.
 """
 
 import logging
+import time
 from typing import Optional, Tuple
 
 import psycopg2
@@ -72,8 +93,11 @@ class CachedDistanceService(DistanceService):
         self.inner = inner
         self.coord_precision = coord_precision
 
-        self._conn = psycopg2.connect(database_url)
-        self._conn.autocommit = True
+        # Keep the real connection string around. psycopg2's conn.dsn
+        # redacts the password, so we can't use conn.dsn to reconnect.
+        self.database_url = database_url
+
+        self._conn = self._connect()
         self._ensure_schema()
 
         # Stats for logging/cost visibility — mirrors the pattern used in
@@ -84,6 +108,18 @@ class CachedDistanceService(DistanceService):
         self.travel_time_api_calls = 0
         self.travel_time_db_hits = 0
 
+    def _connect(self):
+        conn = psycopg2.connect(
+            self.database_url,
+            connect_timeout=10,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=3,
+        )
+        conn.autocommit = True
+        return conn
+
     def _ensure_schema(self):
         with self._conn.cursor() as cur:
             cur.execute(_SCHEMA)
@@ -92,21 +128,61 @@ class CachedDistanceService(DistanceService):
     def _reconnect_if_needed(self):
         if self._conn.closed:
             logger.warning("CachedDistanceService: connection was closed, reconnecting")
-            self._conn = psycopg2.connect(self._conn.dsn)
-            self._conn.autocommit = True
+            self._conn = self._connect()
+
+    def _execute(self, query, params, fetch=False, max_retries: int = 4, base_delay: float = 1.0):
+        """
+        Run a query with retries + backoff. Covers two kinds of transient
+        failure seen in practice:
+          - the pooler drops an idle server-side connection (server closed
+            the connection unexpectedly) -> next attempt reconnects fine.
+          - a brief local DNS/network blip (could not translate host name
+            ..., or similar) -> an IMMEDIATE retry hits the same blip, so
+            this backs off (1s, 2s, 4s, 8s...) to give it a moment to
+            clear before trying again.
+        Anything still failing after max_retries is re-raised so the
+        caller (and the request) fails loudly rather than hanging forever.
+        """
+        last_err = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                self._reconnect_if_needed()
+                with self._conn.cursor() as cur:
+                    cur.execute(query, params)
+                    return cur.fetchone() if fetch else None
+            except psycopg2.OperationalError as e:
+                last_err = e
+                try:
+                    self._conn.close()
+                except Exception:
+                    pass
+
+                if attempt == max_retries:
+                    logger.error(
+                        "CachedDistanceService: query failed after %d attempts (%s), giving up",
+                        attempt, e,
+                    )
+                    break
+
+                delay = base_delay * (2 ** (attempt - 1))
+                logger.warning(
+                    "CachedDistanceService: query failed (attempt %d/%d): %s "
+                    "— retrying in %.1fs",
+                    attempt, max_retries, e, delay,
+                )
+                time.sleep(delay)
+        raise last_err
 
     # -- geocoding -----------------------------------------------------
 
     def geocode(self, address: str, landmark_fallback: Optional[str] = None) -> Tuple[float, float]:
         key = (address or "").strip()
-        self._reconnect_if_needed()
 
-        with self._conn.cursor() as cur:
-            cur.execute(
-                "SELECT latitude, longitude FROM geocode_cache WHERE address = %s",
-                (key,),
-            )
-            row = cur.fetchone()
+        row = self._execute(
+            "SELECT latitude, longitude FROM geocode_cache WHERE address = %s",
+            (key,),
+            fetch=True,
+        )
 
         if row is not None:
             self.geocode_db_hits += 1
@@ -118,15 +194,14 @@ class CachedDistanceService(DistanceService):
         logger.debug("CachedDistanceService.geocode() DB miss for %r, calling inner service", key)
         coords = self.inner.geocode(address, landmark_fallback=landmark_fallback)
 
-        with self._conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO geocode_cache (address, latitude, longitude)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (address) DO NOTHING
-                """,
-                (key, coords[0], coords[1]),
-            )
+        self._execute(
+            """
+            INSERT INTO geocode_cache (address, latitude, longitude)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (address) DO NOTHING
+            """,
+            (key, coords[0], coords[1]),
+        )
 
         return coords
 
@@ -136,19 +211,17 @@ class CachedDistanceService(DistanceService):
         mode = getattr(self.inner, "mode", "driving")
         o = self._round(origin)
         d = self._round(destination)
-        self._reconnect_if_needed()
 
-        with self._conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT minutes FROM travel_time_cache
-                WHERE origin_lat = %s AND origin_lon = %s
-                  AND dest_lat = %s AND dest_lon = %s
-                  AND mode = %s
-                """,
-                (o[0], o[1], d[0], d[1], mode),
-            )
-            row = cur.fetchone()
+        row = self._execute(
+            """
+            SELECT minutes FROM travel_time_cache
+            WHERE origin_lat = %s AND origin_lon = %s
+              AND dest_lat = %s AND dest_lon = %s
+              AND mode = %s
+            """,
+            (o[0], o[1], d[0], d[1], mode),
+            fetch=True,
+        )
 
         if row is not None:
             self.travel_time_db_hits += 1
@@ -159,16 +232,15 @@ class CachedDistanceService(DistanceService):
         logger.debug("CachedDistanceService.travel_time() DB miss for %r -> %r, calling inner service", o, d)
         minutes = self.inner.travel_time(origin, destination)
 
-        with self._conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO travel_time_cache
-                    (origin_lat, origin_lon, dest_lat, dest_lon, mode, minutes)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (origin_lat, origin_lon, dest_lat, dest_lon, mode) DO NOTHING
-                """,
-                (o[0], o[1], d[0], d[1], mode, minutes),
-            )
+        self._execute(
+            """
+            INSERT INTO travel_time_cache
+                (origin_lat, origin_lon, dest_lat, dest_lon, mode, minutes)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (origin_lat, origin_lon, dest_lat, dest_lon, mode) DO NOTHING
+            """,
+            (o[0], o[1], d[0], d[1], mode, minutes),
+        )
 
         return minutes
 
