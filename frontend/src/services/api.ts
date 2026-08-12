@@ -126,15 +126,43 @@ export class ApiService {
 
   public async compareEvaluation(
     manualFile: File,
-    criteriaConfigJson?: string
+    criteriaConfigJson?: string | Record<string, any>
   ): Promise<EvaluationReport> {
     const formData = new FormData();
     formData.append('manual_match_file', manualFile);
-    if (criteriaConfigJson) {
+
+    const queryParams = new URLSearchParams();
+
+    let configObj: Record<string, any> = {};
+    if (typeof criteriaConfigJson === 'string') {
+      try {
+        configObj = JSON.parse(criteriaConfigJson);
+      } catch {
+        // ignore invalid json string
+      }
       formData.append('criteria_config_json', criteriaConfigJson);
+      formData.append('criteria_config', criteriaConfigJson);
+      formData.append('config_json', criteriaConfigJson);
+      formData.append('config', criteriaConfigJson);
+    } else if (criteriaConfigJson && typeof criteriaConfigJson === 'object') {
+      configObj = criteriaConfigJson;
+      const jsonStr = JSON.stringify(criteriaConfigJson);
+      formData.append('criteria_config_json', jsonStr);
+      formData.append('criteria_config', jsonStr);
+      formData.append('config_json', jsonStr);
+      formData.append('config', jsonStr);
     }
 
-    const response = await fetch(`${this.baseUrl}/evaluation/compare`, {
+    Object.keys(configObj).forEach((key) => {
+      const val = String(configObj[key]);
+      formData.append(key, val);
+      queryParams.append(key, val);
+    });
+
+    const queryString = queryParams.toString();
+    const url = `${this.baseUrl}/evaluation/compare${queryString ? `?${queryString}` : ''}`;
+
+    const response = await fetch(url, {
       method: 'POST',
       body: formData,
     });

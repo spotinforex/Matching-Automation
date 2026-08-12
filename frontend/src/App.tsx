@@ -43,6 +43,7 @@ export default function App() {
   // Evaluation comparison state
   const [activeView, setActiveView] = useState<'pipeline' | 'evaluation'>('pipeline');
   const [evaluationReport, setEvaluationReport] = useState<EvaluationReport | null>(null);
+  const [storedManualFile, setStoredManualFile] = useState<File | null>(null);
   const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
   const [isExportingEval, setIsExportingEval] = useState<boolean>(false);
 
@@ -242,9 +243,12 @@ export default function App() {
   // Handle Compare Evaluation (/evaluation/compare)
   const handleCompareEvaluation = async (manualFile: File, configJson?: string) => {
     setIsEvaluating(true);
+    if (manualFile) {
+      setStoredManualFile(manualFile);
+    }
     try {
       const report = await apiService.compareEvaluation(manualFile, configJson);
-      setEvaluationReport(report);
+      setEvaluationReport({ ...report });
 
       const evalWarns = extractEvaluationWarnings(report);
       if (evalWarns.length > 0) {
@@ -253,7 +257,7 @@ export default function App() {
 
       showNotification(
         'success',
-        `Evaluation complete: ${report.summary.compared_count} YPs evaluated (${(report.summary.exact_match_rate * 100).toFixed(0)}% exact matches)`
+        `Evaluation comparison complete: ${report.summary.compared_count} YPs evaluated (${(report.summary.exact_match_rate * 100).toFixed(0)}% exact matches)`
       );
     } catch (err: any) {
       showNotification('error', err.message || 'Evaluation comparison failed');
@@ -458,6 +462,7 @@ export default function App() {
               hasLastResult={!!matchResponse}
               isEvaluating={isEvaluating}
               isExportingEval={isExportingEval}
+              storedManualFile={storedManualFile}
               onCompare={handleCompareEvaluation}
               onExportEval={handleExportEvaluation}
             />
