@@ -1,6 +1,6 @@
 import { HealthResponse, MatchRunResponse, UploadResponse, EvaluationReport } from '../types';
 
-export const DEFAULT_BACKEND_URL = 'https://matching-automation-309037219198.us-east1.run.app';
+export const DEFAULT_BACKEND_URL = 'https://yp-to-mcp-matching-automation-195927873682.europe-west1.run.app';
 
 export class ApiService {
   private baseUrl: string;
