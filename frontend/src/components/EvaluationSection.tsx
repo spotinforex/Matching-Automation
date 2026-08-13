@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { EvaluationReport, EvaluationCriteriaConfig, EvaluationRow } from '../types';
+import { EvaluationReport, EvaluationCriteriaConfig, EvaluationRow, SpecializationBreakdownItem } from '../types';
 import {
   FileSpreadsheet,
   Upload,
@@ -18,6 +18,7 @@ import {
   Scale,
   X,
   Info,
+  BarChart3,
 } from 'lucide-react';
 
 interface EvaluationSectionProps {
@@ -102,13 +103,18 @@ export const EvaluationSection: React.FC<EvaluationSectionProps> = ({
 
   // Filter evaluation rows
   const filteredRows = report ? report.rows.filter((row) => {
+    const term = searchTerm.toLowerCase();
     const matchesSearch =
       searchTerm === '' ||
-      row.yp_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (row.manual_mcp_id && row.manual_mcp_id.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (row.automated_mcp_id && row.automated_mcp_id.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (row.yp_skill && row.yp_skill.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (row.verdict && row.verdict.toLowerCase().includes(searchTerm.toLowerCase()));
+      row.yp_id.toLowerCase().includes(term) ||
+      (row.manual_mcp_id && row.manual_mcp_id.toLowerCase().includes(term)) ||
+      (row.automated_mcp_id && row.automated_mcp_id.toLowerCase().includes(term)) ||
+      (row.yp_skill && row.yp_skill.toLowerCase().includes(term)) ||
+      (row.manual_mcp_skill && row.manual_mcp_skill.toLowerCase().includes(term)) ||
+      (row.automated_mcp_skill && row.automated_mcp_skill.toLowerCase().includes(term)) ||
+      (row.manual_specialization_class && row.manual_specialization_class.toLowerCase().includes(term)) ||
+      (row.automated_specialization_class && row.automated_specialization_class.toLowerCase().includes(term)) ||
+      (row.verdict && row.verdict.toLowerCase().includes(term));
 
     const matchesVerdict =
       verdictFilter === 'ALL' ||
@@ -471,6 +477,126 @@ export const EvaluationSection: React.FC<EvaluationSectionProps> = ({
             )}
           </div>
 
+          {/* Distance Distribution Statistics */}
+          {(report.summary.automated_distance_stats || report.summary.manual_distance_stats) && (
+            <div className="bg-slate-50/80 border border-slate-200 rounded-xl p-4 space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center space-x-2">
+                <BarChart3 className="w-4 h-4 text-purple-600" />
+                <span>Distance Distribution Statistics</span>
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Automated Distance Stats */}
+                {report.summary.automated_distance_stats && (
+                  <div className="bg-white p-3.5 rounded-lg border border-slate-200 space-y-2">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                      <span className="text-[11px] font-bold text-slate-800">Automated Match Distances</span>
+                      <span className="text-[10px] font-mono text-slate-500">n = {report.summary.automated_distance_stats.n ?? 0}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-center font-mono">
+                      <div className="bg-slate-50 p-1.5 rounded">
+                        <span className="text-[9px] text-slate-400 block font-sans font-semibold uppercase">Mean</span>
+                        <span className="text-xs font-bold text-slate-900">{report.summary.automated_distance_stats.mean_km?.toFixed(2) ?? '-'} km</span>
+                      </div>
+                      <div className="bg-slate-50 p-1.5 rounded">
+                        <span className="text-[9px] text-slate-400 block font-sans font-semibold uppercase">Median</span>
+                        <span className="text-xs font-bold text-slate-900">{report.summary.automated_distance_stats.median_km?.toFixed(2) ?? '-'} km</span>
+                      </div>
+                      <div className="bg-slate-50 p-1.5 rounded">
+                        <span className="text-[9px] text-slate-400 block font-sans font-semibold uppercase">Max</span>
+                        <span className="text-xs font-bold text-slate-900">{report.summary.automated_distance_stats.max_km?.toFixed(2) ?? '-'} km</span>
+                      </div>
+                      <div className="bg-slate-50 p-1.5 rounded">
+                        <span className="text-[9px] text-slate-400 block font-sans font-semibold uppercase">P90</span>
+                        <span className="text-xs font-bold text-slate-900">{report.summary.automated_distance_stats.p90_km?.toFixed(2) ?? '-'} km</span>
+                      </div>
+                      <div className="bg-slate-50 p-1.5 rounded col-span-2">
+                        <span className="text-[9px] text-slate-400 block font-sans font-semibold uppercase">Std Dev</span>
+                        <span className="text-xs font-bold text-slate-900">{report.summary.automated_distance_stats.stdev_km?.toFixed(2) ?? '-'} km</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Manual Distance Stats */}
+                {report.summary.manual_distance_stats && (
+                  <div className="bg-white p-3.5 rounded-lg border border-slate-200 space-y-2">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                      <span className="text-[11px] font-bold text-slate-800">Manual Match Distances</span>
+                      <span className="text-[10px] font-mono text-slate-500">n = {report.summary.manual_distance_stats.n ?? 0}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-center font-mono">
+                      <div className="bg-slate-50 p-1.5 rounded">
+                        <span className="text-[9px] text-slate-400 block font-sans font-semibold uppercase">Mean</span>
+                        <span className="text-xs font-bold text-slate-900">{report.summary.manual_distance_stats.mean_km?.toFixed(2) ?? '-'} km</span>
+                      </div>
+                      <div className="bg-slate-50 p-1.5 rounded">
+                        <span className="text-[9px] text-slate-400 block font-sans font-semibold uppercase">Median</span>
+                        <span className="text-xs font-bold text-slate-900">{report.summary.manual_distance_stats.median_km?.toFixed(2) ?? '-'} km</span>
+                      </div>
+                      <div className="bg-slate-50 p-1.5 rounded">
+                        <span className="text-[9px] text-slate-400 block font-sans font-semibold uppercase">Max</span>
+                        <span className="text-xs font-bold text-slate-900">{report.summary.manual_distance_stats.max_km?.toFixed(2) ?? '-'} km</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Specialization Breakdown by Skill */}
+          {report.summary.specialization_breakdown && Object.keys(report.summary.specialization_breakdown).length > 0 && (
+            <div className="bg-slate-50/80 border border-slate-200 rounded-xl p-4 space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center space-x-2">
+                <Layers className="w-4 h-4 text-orange-600" />
+                <span>Specialization Breakdown by Skill</span>
+              </h4>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {Object.entries(report.summary.specialization_breakdown).map(([skill, itemVal]) => {
+                  const item = itemVal as SpecializationBreakdownItem;
+                  return (
+                    <div key={skill} className="bg-white p-3 rounded-lg border border-slate-200 space-y-2">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-1">
+                        <span className="text-xs font-bold text-slate-900 font-mono">{skill}</span>
+                        <span className="text-[10px] font-semibold bg-orange-100 text-orange-800 px-1.5 py-0.2 rounded font-mono">
+                          n={item.n ?? 0}
+                        </span>
+                      </div>
+
+                      <div className="space-y-1.5 text-[11px]">
+                        {item.automated && (
+                          <div>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase block font-sans">Automated Classes</span>
+                            <div className="flex flex-wrap gap-1 mt-0.5">
+                              {Object.entries(item.automated).map(([cls, cnt]) => (
+                                <span key={cls} className="bg-orange-50 text-orange-800 border border-orange-200/60 font-mono text-[10px] px-1.5 py-0.2 rounded">
+                                  {cls}: {cnt}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {item.manual && (
+                          <div>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase block font-sans">Manual Classes</span>
+                            <div className="flex flex-wrap gap-1 mt-0.5">
+                              {Object.entries(item.manual).map(([cls, cnt]) => (
+                                <span key={cls} className="bg-slate-100 text-slate-700 font-mono text-[10px] px-1.5 py-0.2 rounded">
+                                  {cls}: {cnt}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Audit Trail Table */}
           <div className="space-y-3">
             {/* Controls */}
@@ -573,7 +699,17 @@ export const EvaluationSection: React.FC<EvaluationSectionProps> = ({
 
                           <td className="py-3 px-4">
                             <div className="font-semibold text-slate-800">{row.manual_mcp_id || 'N/A'}</div>
-                            <div className="text-[10px] text-slate-400">
+                            {row.manual_mcp_skill && (
+                              <div className="text-[10px] text-slate-500 font-mono">{row.manual_mcp_skill}</div>
+                            )}
+                            {row.manual_specialization_class && (
+                              <div className="mt-0.5">
+                                <span className="text-[9px] bg-slate-100 text-slate-600 px-1 py-0.2 rounded font-mono">
+                                  {row.manual_specialization_class}
+                                </span>
+                              </div>
+                            )}
+                            <div className="text-[10px] text-slate-400 mt-0.5">
                               {row.manual_distance_km !== null && row.manual_distance_km !== undefined
                                 ? `${row.manual_distance_km.toFixed(2)} km`
                                 : '-'}
@@ -582,7 +718,17 @@ export const EvaluationSection: React.FC<EvaluationSectionProps> = ({
 
                           <td className="py-3 px-4">
                             <div className="font-semibold text-slate-900">{row.automated_mcp_id || 'N/A'}</div>
-                            <div className="text-[10px] text-orange-600 font-sans">
+                            {row.automated_mcp_skill && (
+                              <div className="text-[10px] text-orange-700 font-mono">{row.automated_mcp_skill}</div>
+                            )}
+                            {row.automated_specialization_class && (
+                              <div className="mt-0.5">
+                                <span className="text-[9px] bg-orange-100 text-orange-800 font-medium px-1 py-0.2 rounded font-mono">
+                                  {row.automated_specialization_class}
+                                </span>
+                              </div>
+                            )}
+                            <div className="text-[10px] text-slate-500 font-sans mt-0.5">
                               {row.automated_travel_time_reported !== null && row.automated_travel_time_reported !== undefined
                                 ? `${row.automated_travel_time_reported.toFixed(1)} mins travel`
                                 : '-'}

@@ -39,14 +39,39 @@ in the discussion — a PWD proximity threshold, and a rule that female YPs
 should preferentially land at a female-owned/operated MCP. Both are
 configurable and off/on via config so the team can correct them without
 touching code; treat the defaults as placeholders, not confirmed policy.
+
+--------------------------------------------------------------------------
+CHANGELOG (this revision)
+--------------------------------------------------------------------------
+- `_evaluate_row` now also records the raw MCP skill/specialization string
+  behind each match (`manual_mcp_skill` / `automated_mcp_skill`) and a
+  four-way classification of how it relates to the YP's own skill
+  (`manual_specialization_class` / `automated_specialization_class`, see
+  `classify_specialization()`). The existing `*_specialization_exact`
+  booleans stayed as-is (they feed the EQUIVALENT/DIVERGENT verdict and
+  changing their meaning would silently change every past report's
+  verdict counts) — the new fields are additive, not a replacement.
+  Reason: "specialization OK" alone conflates "matched to the exact same
+  subtype" with "matched to a both/any wildcard MCP", which is enough for
+  compliance but not enough to answer "how many garment_female YPs
+  actually landed on a garment_female MCP" — a question that's come up
+  more than once.
+- `_summarize` now reports mean/median/stdev/p90 for both manual and
+  automated distance (in addition to the existing avg_distance_delta_km),
+  and a per-skill-category specialization breakdown
+  (`specialization_breakdown`) built from `classify_specialization`.
+- `write_evaluation_workbook` writes the two new per-row columns, adds the
+  distance stats to the Summary sheet, and adds a new "Specialization
+  Breakdown" sheet (one row per YP skill category x manual/automated).
 """
 
 import argparse
 import json
 import logging
 import math
+import statistics
 import time
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -111,6 +136,60 @@ def specialization_matches(yp_specialization, mcp_specialization):
         return True
 
     return False
+
+
+def classify_specialization(yp_specialization, mcp_specialization) -> str:
+    """
+    Finer-grained cousin of specialization_matches(): instead of a plain
+    OK/not-OK, says *how* a YP<->MCP specialization relates, so "exact
+    subtype match" (e.g. garment_female -> garment_female) can be counted
+    separately from "matched, but only via the both/any wildcard" (e.g.
+    garment_female -> garment_both). Both count as OK for compliance
+    purposes (specialization_matches() returns True for either), but they
+    are not the same outcome operationally, and the difference is exactly
+    what "how many garment_female YPs landed on a garment_female MCP"
+    is asking.
+
+    Returns one of:
+      "unknown_mcp"        - mcp_specialization is missing/blank (e.g. the
+                              MCP wasn't present in whatever master data
+                              this evaluation run had on hand)
+      "different_trade"    - different top-level trade area entirely
+                              (garment vs footwear vs leather) — a hard
+                              trade-area miss
+      "exact_subtype"      - same category AND same subtype
+                              (garment_female -> garment_female)
+      "wildcard_match"     - same category, different subtype, but valid
+                              via the both/any wildcard
+                              (garment_female -> garment_both, or
+                               garment_both -> garment_female)
+      "subtype_mismatch"   - same category, different subtype, and neither
+                              side is the wildcard (e.g. garment_female ->
+                              garment_male) — same trade area but the
+                              gender/subtype split doesn't line up
+    """
+    mcp = _clean_str(mcp_specialization).lower()
+    if not mcp:
+        return "unknown_mcp"
+
+    yp = _clean_str(yp_specialization).lower()
+    if not yp:
+        return "unknown_mcp"
+
+    yp_category, _, yp_subtype = yp.rpartition("_")
+    mcp_category, _, mcp_subtype = mcp.rpartition("_")
+
+    if not yp_category or not mcp_category or yp_category != mcp_category:
+        return "different_trade"
+
+    if yp_subtype == mcp_subtype:
+        return "exact_subtype"
+
+    wildcard = _WILDCARD_BY_CATEGORY.get(yp_category)
+    if wildcard and (yp_subtype == wildcard or mcp_subtype == wildcard):
+        return "wildcard_match"
+
+    return "subtype_mismatch"
 
 
 # ---------------------------------------------------------------------------
@@ -310,6 +389,13 @@ def _evaluate_row(yp, manual_mcp_id, automated_mcp_id, automated_travel_time, mc
     row["manual_specialization_exact"] = (manual_mcp is not None and specialization_matches(yp.skill, manual_mcp.skill))
     row["automated_specialization_exact"] = (automated_mcp is not None and specialization_matches(yp.skill, automated_mcp.skill))
 
+    # NEW: raw MCP skill string + fine-grained classification behind each
+    # match, so "exact subtype" and "wildcard-only" can be told apart.
+    row["manual_mcp_skill"] = manual_mcp.skill if manual_mcp else None
+    row["automated_mcp_skill"] = automated_mcp.skill if automated_mcp else None
+    row["manual_specialization_class"] = classify_specialization(yp.skill, row["manual_mcp_skill"])
+    row["automated_specialization_class"] = classify_specialization(yp.skill, row["automated_mcp_skill"])
+
     manual_km = _haversine_km(yp.latitude, yp.longitude, manual_mcp.latitude, manual_mcp.longitude) if manual_mcp else None
     automated_km = _haversine_km(yp.latitude, yp.longitude, automated_mcp.latitude, automated_mcp.longitude) if automated_mcp else None
     row["manual_distance_km"] = round(manual_km, 3) if manual_km is not None else None
@@ -356,6 +442,54 @@ def _rate(flags: list) -> Optional[float]:
     return round(sum(1 for f in clean if f) / len(clean), 4) if clean else None
 
 
+def _distance_stats(values: list[float]) -> Optional[dict]:
+    """Mean/median/stdev/p90/max for a list of Haversine distances (km).
+    Returns None if there's nothing to summarize. Reported alongside the
+    existing avg_distance_delta_km rather than replacing it: the delta
+    answers "closer or farther, on average", these answer "what does the
+    actual distance distribution look like" (a few bad-geocode outliers
+    can blow out the mean without moving the median, so both are kept)."""
+    clean = [v for v in values if v is not None]
+    if not clean:
+        return None
+    stats = {
+        "n": len(clean),
+        "mean_km": round(statistics.mean(clean), 3),
+        "median_km": round(statistics.median(clean), 3),
+        "max_km": round(max(clean), 3),
+    }
+    if len(clean) > 1:
+        stats["stdev_km"] = round(statistics.stdev(clean), 3)
+    if len(clean) >= 10:
+        stats["p90_km"] = round(statistics.quantiles(clean, n=10)[8], 3)
+    return stats
+
+
+def _specialization_breakdown(compared_rows: list[dict]) -> dict:
+    """
+    Per YP-skill-category breakdown of classify_specialization() outcomes,
+    manual vs automated. This is the "how many garment_female YPs actually
+    landed on a garment_female MCP, vs a garment_both MCP, vs something
+    else" table — specialization_exact/OK alone can't answer that because
+    it treats a wildcard match as equally "fine" as an exact one.
+    """
+    breakdown = defaultdict(lambda: {"manual": Counter(), "automated": Counter()})
+    for row in compared_rows:
+        skill = row.get("yp_skill") or "(unknown)"
+        breakdown[skill]["manual"][row.get("manual_specialization_class", "unknown_mcp")] += 1
+        breakdown[skill]["automated"][row.get("automated_specialization_class", "unknown_mcp")] += 1
+
+    result = {}
+    for skill, sides in breakdown.items():
+        n = sum(sides["manual"].values())
+        result[skill] = {
+            "n": n,
+            "manual": dict(sides["manual"]),
+            "automated": dict(sides["automated"]),
+        }
+    return result
+
+
 def _summarize(rows: list[dict], manual_pairs: list[tuple], automated_pairs: list[tuple], mcps_by_id: dict) -> dict:
     compared = [r for r in rows if r["status"] == "compared"]
 
@@ -381,10 +515,17 @@ def _summarize(rows: list[dict], manual_pairs: list[tuple], automated_pairs: lis
             summary["avg_distance_delta_km"] = round(sum(deltas) / len(deltas), 3)
             summary["automated_closer_or_equal_rate"] = round(sum(1 for d in deltas if d <= 0) / len(deltas), 4)
 
+        # NEW: full distance distributions, not just the paired delta.
+        summary["manual_distance_stats"] = _distance_stats([r["manual_distance_km"] for r in compared])
+        summary["automated_distance_stats"] = _distance_stats([r["automated_distance_km"] for r in compared])
+
         summary["manual_trade_compliance_rate"] = _rate([r["manual_trade_compatible"] for r in compared])
         summary["automated_trade_compliance_rate"] = _rate([r["automated_trade_compatible"] for r in compared])
         summary["manual_pwd_proximity_rate"] = _rate([r["manual_pwd_proximity_ok"] for r in compared])
         summary["automated_pwd_proximity_rate"] = _rate([r["automated_pwd_proximity_ok"] for r in compared])
+
+        # NEW: exact-subtype vs wildcard-only specialization breakdown.
+        summary["specialization_breakdown"] = _specialization_breakdown(compared)
 
     manual_usage, manual_violations = _capacity_usage(manual_pairs, mcps_by_id)
     automated_usage, automated_violations = _capacity_usage(automated_pairs, mcps_by_id)
@@ -524,11 +665,29 @@ def write_evaluation_workbook(report: dict, output_path: str = "evaluation_repor
     ws_summary["A2"].font = body_font
 
     summary = report["summary"]
-    scalar_rows = [[k.replace("_", " ").title(), v] for k, v in summary.items()
-                   if k not in ("manual_capacity_violations", "automated_capacity_violations", "unresolved_yp_ids")]
+    # distance_stats / specialization_breakdown are nested dicts — keep them
+    # off the flat scalar table below, they get their own tables.
+    skip_keys = (
+        "manual_capacity_violations", "automated_capacity_violations", "unresolved_yp_ids",
+        "manual_distance_stats", "automated_distance_stats", "specialization_breakdown",
+    )
+    scalar_rows = [[k.replace("_", " ").title(), v] for k, v in summary.items() if k not in skip_keys]
     write_table(ws_summary, ["Metric", "Value"], scalar_rows, start_row=4)
+    next_row = 4 + len(scalar_rows) + 2
 
-    next_row = 4 + len(scalar_rows) + 3
+    # NEW: distance distribution stats (mean/median/stdev/p90/max), manual vs automated.
+    ws_summary.cell(row=next_row, column=1, value="Distance Distribution (km, Haversine)").font = Font(name="Arial", bold=True)
+    next_row += 1
+    dist_stat_keys = ["n", "mean_km", "median_km", "stdev_km", "p90_km", "max_km"]
+    man_ds = summary.get("manual_distance_stats") or {}
+    auto_ds = summary.get("automated_distance_stats") or {}
+    dist_rows = [
+        ["Manual"] + [man_ds.get(k, "") for k in dist_stat_keys],
+        ["Automated"] + [auto_ds.get(k, "") for k in dist_stat_keys],
+    ]
+    write_table(ws_summary, ["Match Type"] + [k.replace("_km", " (km)").replace("_", " ").title() for k in dist_stat_keys], dist_rows, start_row=next_row)
+    next_row += 1 + len(dist_rows) + 2
+
     ws_summary.cell(row=next_row, column=1, value="Manual Capacity Violations").font = Font(name="Arial", bold=True)
     violation_rows = [[mcp_id, v["assigned"], v["capacity"]] for mcp_id, v in summary.get("manual_capacity_violations", {}).items()]
     write_table(ws_summary, ["MCP ID", "Assigned", "Capacity"], violation_rows, start_row=next_row + 1)
@@ -543,6 +702,24 @@ def write_evaluation_workbook(report: dict, output_path: str = "evaluation_repor
         ws_summary.cell(row=next_row, column=1, value="Unresolved YP IDs (in match data, not in YP file)").font = Font(name="Arial", bold=True)
         write_table(ws_summary, ["YP ID"], [[y] for y in summary["unresolved_yp_ids"]], start_row=next_row + 1)
 
+    # -- Specialization Breakdown sheet (NEW) --------------------------------
+    ws_spec = wb.create_sheet("Specialization Breakdown")
+    spec_headers = [
+        "YP Skill", "Match Type", "N",
+        "Exact Subtype", "Wildcard Match", "Subtype Mismatch", "Different Trade", "Unknown MCP",
+    ]
+    spec_rows = []
+    for skill, data in sorted(summary.get("specialization_breakdown", {}).items()):
+        for match_type in ("manual", "automated"):
+            counts = data[match_type]
+            spec_rows.append([
+                skill, match_type.title(), data["n"],
+                counts.get("exact_subtype", 0), counts.get("wildcard_match", 0),
+                counts.get("subtype_mismatch", 0), counts.get("different_trade", 0),
+                counts.get("unknown_mcp", 0),
+            ])
+    write_table(ws_spec, spec_headers, spec_rows)
+
     # -- Detail sheet ---------------------------------------------------------
     ws_detail = wb.create_sheet("Detail")
     detail_headers = [
@@ -552,6 +729,8 @@ def write_evaluation_workbook(report: dict, output_path: str = "evaluation_repor
         "Automated Travel Time (reported)",
         "Manual Trade OK", "Automated Trade OK",
         "Manual Specialization OK", "Automated Specialization OK",
+        "Manual MCP Skill", "Automated MCP Skill",                      # NEW
+        "Manual Specialization Class", "Automated Specialization Class",  # NEW
         "Manual PWD Proximity OK", "Automated PWD Proximity OK",
     ]
     detail_rows = []
@@ -565,6 +744,8 @@ def write_evaluation_workbook(report: dict, output_path: str = "evaluation_repor
             r.get("automated_travel_time_reported", ""),
             r.get("manual_trade_compatible", ""), r.get("automated_trade_compatible", ""),
             r.get("manual_specialization_exact", ""), r.get("automated_specialization_exact", ""),
+            r.get("manual_mcp_skill", ""), r.get("automated_mcp_skill", ""),
+            r.get("manual_specialization_class", ""), r.get("automated_specialization_class", ""),
             r.get("manual_pwd_proximity_ok", ""), r.get("automated_pwd_proximity_ok", ""),
         ])
     write_table(ws_detail, detail_headers, detail_rows)
