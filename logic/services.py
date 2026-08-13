@@ -128,7 +128,12 @@ class GoogleMapsDistanceService(DistanceService):
             return self._geocode_cache[query]
 
         logger.info("_geocode_one() calling Geocoding API for %r", query)
-        params = {"address": query, "key": self.api_key}
+        params = {
+            "address": query,
+            "key": self.api_key,
+            "region": "ng",  # ccTLD bias — nudges ranking toward Nigeria
+            "components": "administrative_area:Abia State|country:NG",  # hard filter
+        }
         data = self._request_with_retry(self.GEOCODE_URL, params)
 
         status = data.get("status")

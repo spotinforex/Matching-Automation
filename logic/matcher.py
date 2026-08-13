@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class Matcher:
 
-    def __init__(self, distance_service, shortlist_size=10, random_seed=None):
+    def __init__(self, distance_service, shortlist_size=10, random_seed=42):
         self.distance = distance_service
         self.shortlist_size = shortlist_size
         self.route_cache = {}

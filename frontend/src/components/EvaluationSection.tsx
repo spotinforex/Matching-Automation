@@ -354,7 +354,9 @@ export const EvaluationSection: React.FC<EvaluationSectionProps> = ({
                 Exact Match Rate
               </span>
               <div className="text-2xl font-black text-emerald-950">
-                {(report.summary.exact_match_rate * 100).toFixed(1)}%
+                {report.summary.exact_match_rate !== undefined && report.summary.exact_match_rate !== null
+                  ? `${(report.summary.exact_match_rate * 100).toFixed(1)}%`
+                  : 'N/A'}
               </div>
               <p className="text-[11px] text-emerald-700 font-medium">
                 {report.summary.exact_match_count} exact MCP matches
@@ -366,7 +368,9 @@ export const EvaluationSection: React.FC<EvaluationSectionProps> = ({
                 Equivalent / Better Rate
               </span>
               <div className="text-2xl font-black text-blue-950">
-                {(report.summary.equivalent_or_better_rate * 100).toFixed(1)}%
+                {report.summary.equivalent_or_better_rate !== undefined && report.summary.equivalent_or_better_rate !== null
+                  ? `${(report.summary.equivalent_or_better_rate * 100).toFixed(1)}%`
+                  : 'N/A'}
               </div>
               <p className="text-[11px] text-blue-700 font-medium">
                 {report.summary.equivalent_match_count} equivalent matches
