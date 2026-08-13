@@ -452,11 +452,21 @@ def _distance_stats(values: list[float]) -> Optional[dict]:
     clean = [v for v in values if v is not None]
     if not clean:
         return None
+    # Exactly 0.0 (not "very small") is the landmark-fallback signature:
+    # when both sides' addresses fail to geocode and both fall back to the
+    # same landmark string, origin and destination land on the identical
+    # centroid, giving a true zero — not a genuinely tiny real-world gap.
+    # Counted here so it's visible without needing per-row provenance
+    # tracking (which addresses/landmarks succeeded vs fell back isn't
+    # currently recorded anywhere upstream).
+    zero_distance_count = sum(1 for v in clean if v == 0.0)
     stats = {
         "n": len(clean),
         "mean_km": round(statistics.mean(clean), 3),
         "median_km": round(statistics.median(clean), 3),
         "max_km": round(max(clean), 3),
+        "zero_distance_count": zero_distance_count,
+        "zero_distance_rate": round(zero_distance_count / len(clean), 4),
     }
     if len(clean) > 1:
         stats["stdev_km"] = round(statistics.stdev(clean), 3)
@@ -515,7 +525,6 @@ def _summarize(rows: list[dict], manual_pairs: list[tuple], automated_pairs: lis
             summary["avg_distance_delta_km"] = round(sum(deltas) / len(deltas), 3)
             summary["automated_closer_or_equal_rate"] = round(sum(1 for d in deltas if d <= 0) / len(deltas), 4)
 
-        # NEW: full distance distributions, not just the paired delta.
         summary["manual_distance_stats"] = _distance_stats([r["manual_distance_km"] for r in compared])
         summary["automated_distance_stats"] = _distance_stats([r["automated_distance_km"] for r in compared])
 
@@ -678,7 +687,7 @@ def write_evaluation_workbook(report: dict, output_path: str = "evaluation_repor
     # NEW: distance distribution stats (mean/median/stdev/p90/max), manual vs automated.
     ws_summary.cell(row=next_row, column=1, value="Distance Distribution (km, Haversine)").font = Font(name="Arial", bold=True)
     next_row += 1
-    dist_stat_keys = ["n", "mean_km", "median_km", "stdev_km", "p90_km", "max_km"]
+    dist_stat_keys = ["n", "mean_km", "median_km", "stdev_km", "p90_km", "max_km", "zero_distance_count", "zero_distance_rate"]
     man_ds = summary.get("manual_distance_stats") or {}
     auto_ds = summary.get("automated_distance_stats") or {}
     dist_rows = [

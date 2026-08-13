@@ -481,12 +481,12 @@ export const EvaluationSection: React.FC<EvaluationSectionProps> = ({
             )}
           </div>
 
-          {/* Distance Distribution Statistics */}
+          {/* Landmark Fallback Statistics */}
           {(report.summary.automated_distance_stats || report.summary.manual_distance_stats) && (
             <div className="bg-slate-50/80 border border-slate-200 rounded-xl p-4 space-y-3">
               <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center space-x-2">
                 <BarChart3 className="w-4 h-4 text-purple-600" />
-                <span>Distance Distribution Statistics</span>
+                <span>Landmark Fallback</span>
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Automated Distance Stats */}
