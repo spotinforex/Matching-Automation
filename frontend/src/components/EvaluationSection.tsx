@@ -468,6 +468,91 @@ export const EvaluationSection: React.FC<EvaluationSectionProps> = ({
               </div>
             </div>
 
+            {/* MCP Capacity Violations */}
+            {(report.summary.automated_capacity_violations !== undefined || report.summary.manual_capacity_violations !== undefined) && (
+              <div className="bg-white p-3.5 rounded-lg border border-slate-200 space-y-2">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                  <span className="text-[11px] font-bold text-slate-800">
+                    MCP Center Capacity Violations
+                  </span>
+                  {Object.keys(report.summary.automated_capacity_violations || {}).length === 0 &&
+                  Object.keys(report.summary.manual_capacity_violations || {}).length === 0 ? (
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Fully Capacity Compliant (0 Violations)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3 text-rose-600" /> Capacity Limit Exceeded
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-semibold block uppercase">Automated Run Capacity Status</span>
+                    {Object.keys(report.summary.automated_capacity_violations || {}).length === 0 ? (
+                      <span className="text-xs font-semibold text-slate-700 mt-0.5 block">0 center capacity violations</span>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                        {Object.entries(report.summary.automated_capacity_violations!).map(([mcpId, info]) => {
+                          let label = '';
+                          if (typeof info === 'number') {
+                            label = `${mcpId}: +${info} YPs over capacity`;
+                          } else if (info && typeof info === 'object') {
+                            const infoObj = info as Record<string, any>;
+                            const assigned = typeof infoObj.assigned === 'number' ? infoObj.assigned : 0;
+                            const capacity = typeof infoObj.capacity === 'number' ? infoObj.capacity : 0;
+                            const excess = assigned - capacity;
+                            label = excess > 0 
+                              ? `${mcpId}: +${excess} over cap (${assigned}/${capacity})`
+                              : `${mcpId}: ${assigned}/${capacity} assigned`;
+                          } else {
+                            label = `${mcpId}: ${String(info)}`;
+                          }
+                          return (
+                            <span key={mcpId} className="bg-rose-50 text-rose-800 border border-rose-200 font-mono text-[11px] px-2 py-0.5 rounded font-bold">
+                              {label}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-semibold block uppercase">Manual Reference Capacity Status</span>
+                    {Object.keys(report.summary.manual_capacity_violations || {}).length === 0 ? (
+                      <span className="text-xs font-semibold text-slate-700 mt-0.5 block">0 center capacity violations</span>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                        {Object.entries(report.summary.manual_capacity_violations!).map(([mcpId, info]) => {
+                          let label = '';
+                          if (typeof info === 'number') {
+                            label = `${mcpId}: +${info} YPs over capacity`;
+                          } else if (info && typeof info === 'object') {
+                            const infoObj = info as Record<string, any>;
+                            const assigned = typeof infoObj.assigned === 'number' ? infoObj.assigned : 0;
+                            const capacity = typeof infoObj.capacity === 'number' ? infoObj.capacity : 0;
+                            const excess = assigned - capacity;
+                            label = excess > 0 
+                              ? `${mcpId}: +${excess} over cap (${assigned}/${capacity})`
+                              : `${mcpId}: ${assigned}/${capacity} assigned`;
+                          } else {
+                            label = `${mcpId}: ${String(info)}`;
+                          }
+                          return (
+                            <span key={mcpId} className="bg-amber-50 text-amber-800 border border-amber-200 font-mono text-[11px] px-2 py-0.5 rounded font-bold">
+                              {label}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Unresolved IDs warning */}
             {report.summary.unresolved_yp_ids && report.summary.unresolved_yp_ids.length > 0 && (
               <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 flex items-center justify-between">
@@ -486,7 +571,7 @@ export const EvaluationSection: React.FC<EvaluationSectionProps> = ({
             <div className="bg-slate-50/80 border border-slate-200 rounded-xl p-4 space-y-3">
               <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center space-x-2">
                 <BarChart3 className="w-4 h-4 text-purple-600" />
-                <span>Landmark Fallback</span>
+                <span>Key Metrics</span>
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Automated Distance Stats */}
@@ -513,9 +598,15 @@ export const EvaluationSection: React.FC<EvaluationSectionProps> = ({
                         <span className="text-[9px] text-slate-400 block font-sans font-semibold uppercase">P90</span>
                         <span className="text-xs font-bold text-slate-900">{report.summary.automated_distance_stats.p90_km?.toFixed(2) ?? '-'} km</span>
                       </div>
-                      <div className="bg-slate-50 p-1.5 rounded col-span-2">
+                      <div className="bg-slate-50 p-1.5 rounded">
                         <span className="text-[9px] text-slate-400 block font-sans font-semibold uppercase">Std Dev</span>
                         <span className="text-xs font-bold text-slate-900">{report.summary.automated_distance_stats.stdev_km?.toFixed(2) ?? '-'} km</span>
+                      </div>
+                      <div className="bg-slate-50 p-1.5 rounded">
+                        <span className="text-[9px] text-slate-400 block font-sans font-semibold uppercase">Landmark fallback match</span>
+                        <span className="text-xs font-bold text-slate-900">
+                          {report.summary.automated_distance_stats.zero_distance_count ?? 0} ({((report.summary.automated_distance_stats.zero_distance_rate ?? 0) * 100).toFixed(0)}%)
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -540,6 +631,12 @@ export const EvaluationSection: React.FC<EvaluationSectionProps> = ({
                       <div className="bg-slate-50 p-1.5 rounded">
                         <span className="text-[9px] text-slate-400 block font-sans font-semibold uppercase">Max</span>
                         <span className="text-xs font-bold text-slate-900">{report.summary.manual_distance_stats.max_km?.toFixed(2) ?? '-'} km</span>
+                      </div>
+                      <div className="bg-slate-50 p-1.5 rounded col-span-3">
+                        <span className="text-[9px] text-slate-400 block font-sans font-semibold uppercase">Landmark fallback match</span>
+                        <span className="text-xs font-bold text-slate-900">
+                          {report.summary.manual_distance_stats.zero_distance_count ?? 0} ({((report.summary.manual_distance_stats.zero_distance_rate ?? 0) * 100).toFixed(0)}%)
+                        </span>
                       </div>
                     </div>
                   </div>

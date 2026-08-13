@@ -87,6 +87,8 @@ export interface DistanceStats {
   max_km?: number | null;
   stdev_km?: number | null;
   p90_km?: number | null;
+  zero_distance_count?: number | null;
+  zero_distance_rate?: number | null;
 }
 
 export interface SpecializationBreakdownItem {
@@ -94,6 +96,8 @@ export interface SpecializationBreakdownItem {
   manual?: Record<string, number>;
   automated?: Record<string, number>;
 }
+
+export type CapacityViolationInfo = number | { assigned?: number; capacity?: number; [key: string]: any };
 
 export interface EvaluationSummary {
   total_yps_evaluated: number;
@@ -115,8 +119,8 @@ export interface EvaluationSummary {
   manual_pwd_proximity_rate?: number | null;
   automated_pwd_proximity_rate?: number | null;
   specialization_breakdown?: Record<string, SpecializationBreakdownItem> | null;
-  manual_capacity_violations?: Record<string, number>;
-  automated_capacity_violations?: Record<string, number>;
+  manual_capacity_violations?: Record<string, CapacityViolationInfo>;
+  automated_capacity_violations?: Record<string, CapacityViolationInfo>;
   unresolved_yp_ids?: string[];
 }
 

@@ -170,7 +170,15 @@ export function extractEvaluationWarnings(report: EvaluationReport): AppWarning[
       severity: 'high',
       title: `MCP Capacity Over-Allocation Detected in ${violations.length} Center(s)`,
       message: `Automated match allocated YPs beyond recommended capacity limits for centers: ${violations
-        .map(([id, count]) => `${id} (+${count})`)
+        .map(([id, info]) => {
+          if (typeof info === 'object' && info !== null) {
+            const assigned = typeof info.assigned === 'number' ? info.assigned : 0;
+            const capacity = typeof info.capacity === 'number' ? info.capacity : 0;
+            const excess = assigned - capacity;
+            return `${id} (${assigned}/${capacity}${excess > 0 ? `, +${excess}` : ''})`;
+          }
+          return `${id} (+${info})`;
+        })
         .join(', ')}.`,
       timestamp: now,
       category: 'capacity',
