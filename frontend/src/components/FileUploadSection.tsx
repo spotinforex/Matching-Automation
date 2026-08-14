@@ -352,14 +352,21 @@ export const FileUploadSection: React.FC<FileUploadSectionProps> = ({
                 <input
                   type="number"
                   min={1}
-                  max={20}
+                  max={50}
                   value={hopLimit}
-                  onChange={(e) => onHopLimitChange(Math.max(1, parseInt(e.target.value) || 1))}
-                  className="w-14 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-xs font-bold text-center font-mono focus:outline-none focus:border-orange-500"
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value);
+                    if (isNaN(val)) {
+                      onHopLimitChange(1);
+                    } else {
+                      onHopLimitChange(Math.min(50, Math.max(1, val)));
+                    }
+                  }}
+                  className="w-16 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-xs font-bold text-center font-mono focus:outline-none focus:border-orange-500"
                 />
               </div>
               <div className="grid grid-cols-5 gap-1 pt-1">
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((lvl) => (
+                {[10, 20, 30, 40, 50].map((lvl) => (
                   <button
                     key={lvl}
                     type="button"
