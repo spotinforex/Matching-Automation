@@ -35,7 +35,7 @@ export default function App() {
   const [isMatching, setIsMatching] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
 
-  const [hopLimit, setHopLimit] = useState<number>(3);
+  const [hopLimit, setHopLimit] = useState<number>(10);
   const [matchCap, setMatchCap] = useState<number | null>(null);
   const [shortlistSize, setShortlistSize] = useState<number>(10);
   const [matchResponse, setMatchResponse] = useState<MatchRunResponse | null>(null);

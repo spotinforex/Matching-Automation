@@ -1,6 +1,6 @@
 import { HealthResponse, MatchRunResponse, UploadResponse, EvaluationReport } from '../types';
 
-export const DEFAULT_BACKEND_URL = 'https://yp-to-mcp-matching-automation-195927873682.europe-west1.run.app';
+export const DEFAULT_BACKEND_URL = 'http://localhost:8000';
 
 export class ApiService {
   private baseUrl: string;
@@ -85,7 +85,7 @@ export class ApiService {
   }
 
   public async runMatch(
-    hopLimit: number = 3,
+    hopLimit: number = 10,
     matchCap?: number | null,
     shortlistSize: number = 10
   ): Promise<MatchRunResponse> {

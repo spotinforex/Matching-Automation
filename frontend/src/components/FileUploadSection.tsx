@@ -346,21 +346,34 @@ export const FileUploadSection: React.FC<FileUploadSectionProps> = ({
               </label>
             </div>
             <p className="text-[10px] text-slate-500">Fallback landmark search depth</p>
-            <div className="flex items-center space-x-1 bg-white p-1 rounded-md border border-slate-200 pt-1">
-              {[1, 2, 3, 4, 5].map((lvl) => (
-                <button
-                  key={lvl}
-                  type="button"
-                  onClick={() => onHopLimitChange(lvl)}
-                  className={`flex-1 h-7 text-xs font-medium rounded transition-all ${
-                    hopLimit === lvl
-                      ? 'bg-orange-600 text-white shadow-xs font-bold'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                  }`}
-                >
-                  {lvl}
-                </button>
-              ))}
+            <div className="space-y-1 bg-white p-1.5 rounded-md border border-slate-200">
+              <div className="flex items-center space-x-2 pb-1 border-b border-slate-100">
+                <span className="text-[10px] font-semibold text-slate-500">Rounds:</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={hopLimit}
+                  onChange={(e) => onHopLimitChange(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-14 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-xs font-bold text-center font-mono focus:outline-none focus:border-orange-500"
+                />
+              </div>
+              <div className="grid grid-cols-5 gap-1 pt-1">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((lvl) => (
+                  <button
+                    key={lvl}
+                    type="button"
+                    onClick={() => onHopLimitChange(lvl)}
+                    className={`h-6 text-[11px] font-medium rounded transition-all ${
+                      hopLimit === lvl
+                        ? 'bg-orange-600 text-white shadow-xs font-bold'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                  >
+                    {lvl}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 

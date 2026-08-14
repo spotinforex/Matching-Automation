@@ -138,7 +138,7 @@ export const BackendSettingsModal: React.FC<BackendSettingsModalProps> = ({
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-emerald-700 font-bold">POST /match/run</span>
-                <span className="text-slate-500">?HOP_LIMIT=3&MATCH_CAP=...&SHORTLIST_SIZE=10</span>
+                <span className="text-slate-500">?HOP_LIMIT=10&MATCH_CAP=...&SHORTLIST_SIZE=10</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-blue-700 font-bold">GET /match/export</span>
