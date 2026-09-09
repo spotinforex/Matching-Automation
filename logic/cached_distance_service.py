@@ -89,9 +89,11 @@ CREATE TABLE IF NOT EXISTS travel_time_cache (
 
 class CachedDistanceService(DistanceService):
 
-    def __init__(self, inner: DistanceService, database_url: str, coord_precision: int = 6):
+    def __init__(self, inner: DistanceService, database_url: str, coord_precision: int = 6, max_idle_seconds=180):
         self.inner = inner
         self.coord_precision = coord_precision
+        self.max_idle_seconds = max_idle_seconds
+        self._last_used = time.monotonic()
 
         # Keep the real connection string around. psycopg2's conn.dsn
         # redacts the password, so we can't use conn.dsn to reconnect.
@@ -126,23 +128,18 @@ class CachedDistanceService(DistanceService):
         logger.info("CachedDistanceService: schema ensured (geocode_cache, travel_time_cache)")
 
     def _reconnect_if_needed(self):
-        if self._conn.closed:
-            logger.warning("CachedDistanceService: connection was closed, reconnecting")
+        idle_for = time.monotonic() - self._last_used
+        if self._conn.closed or idle_for > self.max_idle_seconds:
+            if not self._conn.closed:
+                logger.info("CachedDistanceService: idle %.0fs, refreshing connection", idle_for)
+                try:
+                    self._conn.close()
+                except Exception:
+                    pass
             self._conn = self._connect()
+        self._last_used = time.monotonic()
 
     def _execute(self, query, params, fetch=False, max_retries: int = 4, base_delay: float = 1.0):
-        """
-        Run a query with retries + backoff. Covers two kinds of transient
-        failure seen in practice:
-          - the pooler drops an idle server-side connection (server closed
-            the connection unexpectedly) -> next attempt reconnects fine.
-          - a brief local DNS/network blip (could not translate host name
-            ..., or similar) -> an IMMEDIATE retry hits the same blip, so
-            this backs off (1s, 2s, 4s, 8s...) to give it a moment to
-            clear before trying again.
-        Anything still failing after max_retries is re-raised so the
-        caller (and the request) fails loudly rather than hanging forever.
-        """
         last_err = None
         for attempt in range(1, max_retries + 1):
             try:
@@ -150,7 +147,7 @@ class CachedDistanceService(DistanceService):
                 with self._conn.cursor() as cur:
                     cur.execute(query, params)
                     return cur.fetchone() if fetch else None
-            except psycopg2.OperationalError as e:
+            except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
                 last_err = e
                 try:
                     self._conn.close()
