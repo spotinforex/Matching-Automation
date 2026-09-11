@@ -60,6 +60,7 @@ def create_user(payload: UserCreateRequest, request: Request):
     user = auth_repo.create_user(
         database_url,
         email=payload.email,
+        full_name=payload.full_name,
         hashed_password=hash_password(temp_password),
         department=payload.department,
         role_id=payload.role_id,
@@ -86,8 +87,8 @@ def list_users(request: Request):
     database_url = get_database_url(request)
     return [
         UserResponse(
-            id=u["id"], email=u["email"], department=u["department"], role_id=u["role_id"],
-            is_super_admin=u["is_super_admin"], is_active=u["is_active"],
+            id=u["id"], email=u["email"], full_name=u["full_name"], department=u["department"],
+            role_id=u["role_id"], is_super_admin=u["is_super_admin"], is_active=u["is_active"],
             must_change_password=u["must_change_password"],
         )
         for u in auth_repo.list_users(database_url)

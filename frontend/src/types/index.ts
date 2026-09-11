@@ -206,38 +206,55 @@ export interface AdminRoleCreateRequest {
 export interface AdminUser {
   id: number;
   email: string;
+  full_name: string | null;
   department: string;
   role_id: number | null;
   is_super_admin: boolean;
   is_active: boolean;
   must_change_password: boolean;
+  name?: string | null;
 }
 
 export interface AdminUserCreateRequest {
   email: string;
+  full_name: string;
   department: string;
   role_id?: number | null;
   is_super_admin: boolean;
 }
 
 export interface AdminUserUpdateRequest {
-  email?: string;
+  full_name?: string | null;
   department?: string;
   role_id?: number | null;
   is_super_admin?: boolean;
   is_active?: boolean;
+  email?: string;
 }
 
 export interface AuditLogItem {
   id?: string | number;
   action: string;
   endpoint?: string;
+  status?: string;
+  actor_id?: number | null;
+  actor_email?: string | null;
+  actor_name?: string | null;
   actor_ip?: string | null;
   user_agent?: string | null;
-  status?: string;
+  metadata?: Record<string, any>;
   created_at?: string;
   timestamp?: string;
-  metadata?: Record<string, any>;
+  performed_by?: string | { name?: string; full_name?: string; email?: string } | null;
+  performed_by_name?: string | null;
+  actor?: string | { name?: string; full_name?: string; email?: string } | null;
+  user?: string | { name?: string; full_name?: string; email?: string } | null;
+  user_name?: string | null;
+  name?: string | null;
+  full_name?: string | null;
+  email?: string | null;
+  user_email?: string | null;
+  username?: string | null;
   [key: string]: any;
 }
 

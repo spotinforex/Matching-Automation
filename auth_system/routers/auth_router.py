@@ -48,6 +48,7 @@ def me(user: dict = Depends(get_current_user)):
     return MeResponse(
         id=user["id"],
         email=user["email"],
+        full_name=user.get("full_name"),
         department=user["department"],
         role=user.get("role_name"),
         permissions=user.get("permissions") or [],

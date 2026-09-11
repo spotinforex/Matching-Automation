@@ -21,13 +21,21 @@ CREATE TABLE IF NOT EXISTS audit_log (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Identity columns for the actor who performed the action. Added via
+-- ADD COLUMN IF NOT EXISTS so this migrates existing tables in place the
+-- next time the app starts, no manual SQL required.
+ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS actor_id INTEGER;
+ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS actor_email TEXT;
+ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS actor_name TEXT;
+
 CREATE INDEX IF NOT EXISTS audit_log_created_at_idx ON audit_log (created_at DESC);
 CREATE INDEX IF NOT EXISTS audit_log_action_idx ON audit_log (action);
+CREATE INDEX IF NOT EXISTS audit_log_actor_id_idx ON audit_log (actor_id);
 """
 
 
 def ensure_audit_log_table(database_url: str | None) -> None:
-    """Create the audit table when Postgres is configured.
+    """Create (or migrate) the audit table when Postgres is configured.
 
     Audit logging must never prevent the matching application from starting.
     Connection and schema errors are therefore logged and intentionally ignored.
@@ -54,6 +62,9 @@ def log_action(
     status: str = "success",
     actor_ip: str | None = None,
     user_agent: str | None = None,
+    actor_id: int | None = None,
+    actor_email: str | None = None,
+    actor_name: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> None:
     """Record an action without allowing audit infrastructure to break a request."""
@@ -67,8 +78,9 @@ def log_action(
                 cursor.execute(
                     """
                     INSERT INTO audit_log
-                        (action, endpoint, status, actor_ip, user_agent, metadata)
-                    VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+                        (action, endpoint, status, actor_ip, user_agent,
+                         actor_id, actor_email, actor_name, metadata)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
                     """,
                     (
                         action,
@@ -76,6 +88,9 @@ def log_action(
                         status,
                         actor_ip,
                         user_agent,
+                        actor_id,
+                        actor_email,
+                        actor_name,
                         json.dumps(metadata or {}, default=str),
                     ),
                 )
@@ -90,6 +105,8 @@ def get_audit_logs(
     to_time: Any = None,
     action: str | None = None,
     status: str | None = None,
+    actor_id: int | None = None,
+    actor_email: str | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[dict[str, Any]], int]:
@@ -111,6 +128,12 @@ def get_audit_logs(
     if status:
         filters.append("status = %s")
         params.append(status)
+    if actor_id is not None:
+        filters.append("actor_id = %s")
+        params.append(actor_id)
+    if actor_email:
+        filters.append("actor_email = %s")
+        params.append(actor_email)
 
     where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
     try:
@@ -123,7 +146,7 @@ def get_audit_logs(
                 cursor.execute(
                     f"""
                     SELECT id, action, endpoint, status, actor_ip::text AS actor_ip,
-                           user_agent, metadata, created_at
+                           user_agent, actor_id, actor_email, actor_name, metadata, created_at
                     FROM audit_log
                     {where_clause}
                     ORDER BY created_at DESC, id DESC

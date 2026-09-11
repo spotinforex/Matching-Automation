@@ -16,12 +16,13 @@ class LoginResponse(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     current_password: str
-    new_password: str = Field(min_length=8)
+    new_password: str = Field(min_length=8, max_length=72)
 
 
 class MeResponse(BaseModel):
     id: int
     email: EmailStr
+    full_name: str | None
     department: str
     role: str | None
     permissions: list[str]
@@ -49,6 +50,7 @@ class RoleResponse(BaseModel):
 
 class UserCreateRequest(BaseModel):
     email: EmailStr
+    full_name: str
     department: str
     role_id: int | None = None
     is_super_admin: bool = False
@@ -57,6 +59,7 @@ class UserCreateRequest(BaseModel):
 class UserResponse(BaseModel):
     id: int
     email: EmailStr
+    full_name: str | None
     department: str
     role_id: int | None
     is_super_admin: bool
@@ -65,6 +68,7 @@ class UserResponse(BaseModel):
 
 
 class UserUpdateRequest(BaseModel):
+    full_name: str | None = None
     department: str | None = None
     role_id: int | None = None
     is_active: bool | None = None

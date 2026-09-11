@@ -13,9 +13,123 @@ import {
   Clock,
   Globe,
   Database,
+  User,
 } from "lucide-react";
 import { AuditLogItem, BackendEndpoint } from "../types";
 import { apiService } from "../services/api";
+
+/**
+ * Resolves the "Performed by" display string:
+ * 1. Shows person's name if available
+ * 2. Falls back to person's email if available
+ * 3. Falls back to "System" for legacy / actorless log entries
+ */
+function getPerformedBy(log: AuditLogItem): {
+  label: string;
+  isFallback: boolean;
+} {
+  // 1. Check for person's name
+  const nameCandidate =
+    (typeof log.name === "string" && log.name.trim()) ||
+    (typeof log.full_name === "string" && log.full_name.trim()) ||
+    (typeof log.user_name === "string" && log.user_name.trim()) ||
+    (typeof log.actor_name === "string" && log.actor_name.trim()) ||
+    (typeof log.performed_by_name === "string" &&
+      log.performed_by_name.trim()) ||
+    (typeof log.performed_by === "object" &&
+      log.performed_by &&
+      ((typeof log.performed_by.name === "string" &&
+        log.performed_by.name.trim()) ||
+        (typeof log.performed_by.full_name === "string" &&
+          log.performed_by.full_name.trim()))) ||
+    (typeof log.actor === "object" &&
+      log.actor &&
+      ((typeof log.actor.name === "string" && log.actor.name.trim()) ||
+        (typeof log.actor.full_name === "string" &&
+          log.actor.full_name.trim()))) ||
+    (typeof log.user === "object" &&
+      log.user &&
+      ((typeof log.user.name === "string" && log.user.name.trim()) ||
+        (typeof log.user.full_name === "string" &&
+          log.user.full_name.trim()))) ||
+    (log.metadata &&
+      typeof log.metadata === "object" &&
+      ((typeof log.metadata.name === "string" && log.metadata.name.trim()) ||
+        (typeof log.metadata.full_name === "string" &&
+          log.metadata.full_name.trim()) ||
+        (typeof log.metadata.user_name === "string" &&
+          log.metadata.user_name.trim()) ||
+        (typeof log.metadata.actor_name === "string" &&
+          log.metadata.actor_name.trim()) ||
+        (typeof log.metadata.performed_by_name === "string" &&
+          log.metadata.performed_by_name.trim()) ||
+        (typeof log.metadata.user === "object" &&
+          log.metadata.user &&
+          ((typeof log.metadata.user.name === "string" &&
+            log.metadata.user.name.trim()) ||
+            (typeof log.metadata.user.full_name === "string" &&
+              log.metadata.user.full_name.trim()))) ||
+        (typeof log.metadata.actor === "object" &&
+          log.metadata.actor &&
+          ((typeof log.metadata.actor.name === "string" &&
+            log.metadata.actor.name.trim()) ||
+            (typeof log.metadata.actor.full_name === "string" &&
+              log.metadata.actor.full_name.trim())))));
+
+  if (nameCandidate) {
+    return { label: nameCandidate, isFallback: false };
+  }
+
+  // 2. Fall back to email
+  const emailCandidate =
+    (typeof log.email === "string" && log.email.trim()) ||
+    (typeof log.user_email === "string" && log.user_email.trim()) ||
+    (typeof log.actor_email === "string" && log.actor_email.trim()) ||
+    (typeof log.performed_by === "object" &&
+      log.performed_by &&
+      typeof log.performed_by.email === "string" &&
+      log.performed_by.email.trim()) ||
+    (typeof log.actor === "object" &&
+      log.actor &&
+      typeof log.actor.email === "string" &&
+      log.actor.email.trim()) ||
+    (typeof log.user === "object" &&
+      log.user &&
+      typeof log.user.email === "string" &&
+      log.user.email.trim()) ||
+    (typeof log.performed_by === "string" && log.performed_by.trim()) ||
+    (typeof log.actor === "string" && log.actor.trim()) ||
+    (typeof log.user === "string" && log.user.trim()) ||
+    (typeof log.username === "string" && log.username.trim()) ||
+    (log.metadata &&
+      typeof log.metadata === "object" &&
+      ((typeof log.metadata.email === "string" && log.metadata.email.trim()) ||
+        (typeof log.metadata.user_email === "string" &&
+          log.metadata.user_email.trim()) ||
+        (typeof log.metadata.actor_email === "string" &&
+          log.metadata.actor_email.trim()) ||
+        (typeof log.metadata.performed_by === "string" &&
+          log.metadata.performed_by.trim()) ||
+        (typeof log.metadata.actor === "string" && log.metadata.actor.trim()) ||
+        (typeof log.metadata.user === "string" && log.metadata.user.trim()) ||
+        (typeof log.metadata.username === "string" &&
+          log.metadata.username.trim()) ||
+        (typeof log.metadata.user === "object" &&
+          log.metadata.user &&
+          typeof log.metadata.user.email === "string" &&
+          log.metadata.user.email.trim()) ||
+        (typeof log.metadata.actor === "object" &&
+          log.metadata.actor &&
+          typeof log.metadata.actor.email === "string" &&
+          log.metadata.actor.email.trim())));
+
+  if (emailCandidate) {
+    return { label: emailCandidate, isFallback: false };
+  }
+
+  // 3. Fall back to System for actorless legacy entries
+  return { label: "System", isFallback: true };
+}
 
 interface AuditLogsModalProps {
   isOpen: boolean;
@@ -41,6 +155,7 @@ export const AuditLogsModal: React.FC<AuditLogsModalProps> = ({
   // Filters
   const [actionFilter, setActionFilter] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [actorEmailFilter, setActorEmailFilter] = useState<string>("");
   const [limit, setLimit] = useState<number>(50);
   const [expandedLogId, setExpandedLogId] = useState<string | number | null>(
     null,
@@ -58,6 +173,7 @@ export const AuditLogsModal: React.FC<AuditLogsModalProps> = ({
       const res = await apiService.getAuditLogs({
         action: actionFilter || null,
         status: statusFilter || null,
+        actor_email: actorEmailFilter.trim() || null,
         limit,
       });
       setLogs(res.items || []);
@@ -67,7 +183,7 @@ export const AuditLogsModal: React.FC<AuditLogsModalProps> = ({
     } finally {
       setIsLoadingLogs(false);
     }
-  }, [actionFilter, statusFilter, limit]);
+  }, [actionFilter, statusFilter, actorEmailFilter, limit]);
 
   const fetchEndpoints = useCallback(async () => {
     setIsLoadingEndpoints(true);
@@ -222,6 +338,18 @@ export const AuditLogsModal: React.FC<AuditLogsModalProps> = ({
                   <option value="error">Error</option>
                 </select>
 
+                {/* Actor Email filter */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={actorEmailFilter}
+                    onChange={(e) => setActorEmailFilter(e.target.value)}
+                    placeholder="Filter by actor email..."
+                    className="bg-white border border-slate-200 rounded-lg pl-8 pr-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-orange-500 font-medium w-48"
+                  />
+                </div>
+
                 {/* Limit dropdown */}
                 <select
                   value={limit}
@@ -267,6 +395,7 @@ export const AuditLogsModal: React.FC<AuditLogsModalProps> = ({
                     <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase text-[10px] tracking-wider">
                       <tr>
                         <th className="py-2.5 px-3">Timestamp</th>
+                        <th className="py-2.5 px-3">Performed by</th>
                         <th className="py-2.5 px-3">Action</th>
                         <th className="py-2.5 px-3">Endpoint</th>
                         <th className="py-2.5 px-3">Client IP</th>
@@ -278,6 +407,7 @@ export const AuditLogsModal: React.FC<AuditLogsModalProps> = ({
                       {logs.map((log, idx) => {
                         const isExpanded = expandedLogId === (log.id || idx);
                         const timeStr = log.timestamp || log.created_at || "";
+                        const actorInfo = getPerformedBy(log);
                         return (
                           <React.Fragment key={log.id || idx}>
                             <tr
@@ -292,6 +422,20 @@ export const AuditLogsModal: React.FC<AuditLogsModalProps> = ({
                                 {timeStr
                                   ? new Date(timeStr).toLocaleString()
                                   : "—"}
+                              </td>
+                              <td className="py-2 px-3 whitespace-nowrap font-sans">
+                                {actorInfo.isFallback ? (
+                                  <span className="text-slate-400 italic text-[11px] bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200/60">
+                                    {actorInfo.label}
+                                  </span>
+                                ) : (
+                                  <div className="flex items-center space-x-1.5">
+                                    <User className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                                    <span className="font-medium text-slate-800 text-xs">
+                                      {actorInfo.label}
+                                    </span>
+                                  </div>
+                                )}
                               </td>
                               <td className="py-2 px-3">
                                 <span className="font-bold text-orange-700 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded text-[10px]">
@@ -324,7 +468,7 @@ export const AuditLogsModal: React.FC<AuditLogsModalProps> = ({
                             {isExpanded && (
                               <tr className="bg-slate-50/90 font-sans">
                                 <td
-                                  colSpan={6}
+                                  colSpan={7}
                                   className="p-3 border-t border-slate-200"
                                 >
                                   <div className="space-y-1.5 text-xs">

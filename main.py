@@ -44,7 +44,7 @@ from utils.audit_log import ensure_audit_log_table, get_audit_logs, log_action
 from dotenv import load_dotenv
 import logging
 
-# --- NEW: auth imports ---
+# --- auth imports ---
 from auth_system.dependencies import require_permission, get_current_user
 from auth_system.routers.auth_router import router as auth_router
 from auth_system.routers.admin_router import router as admin_router
@@ -71,7 +71,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH","DELETE"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -95,10 +95,10 @@ if not _database_url:
     )
 ensure_audit_log_table(_database_url)
 
-# --- NEW: make DATABASE_URL discoverable to auth dependencies via app.state ---
+# --- make DATABASE_URL discoverable to auth dependencies via app.state ---
 app.state.database_url = _database_url
 
-# --- NEW: mount auth + admin routers ---
+# --- mount auth + admin routers ---
 app.include_router(auth_router)
 app.include_router(admin_router)
 
@@ -119,7 +119,7 @@ def health():
     return {"status": "ok"}
 
 
-# --- NEW: endpoints_list scope — lists every registered route ---
+# --- endpoints_list scope — lists every registered route ---
 @app.get("/endpoints", dependencies=[Depends(require_permission("endpoints_list"))])
 def list_endpoints():
     return sorted(
@@ -132,16 +132,19 @@ def list_endpoints():
     )
 
 
-# --- CHANGED: audit_logs scope required ---
-@app.get("/audit/logs", dependencies=[Depends(require_permission("audit_logs"))])
+# --- audit_logs scope required; actor + actor_email filters added ---
+@app.get("/audit/logs")
 def read_audit_logs(
     from_time: datetime | None = Query(None, description="Include events at or after this ISO-8601 time"),
     to_time: datetime | None = Query(None, description="Include events at or before this ISO-8601 time"),
     action: str | None = Query(None, description="Filter by audit action, for example run_match"),
     event_type: str | None = Query(None, alias="type", description="Alias for action"),
     status: str | None = Query(None, description="Filter by status, for example success"),
+    actor_id: int | None = Query(None, description="Filter by the numeric id of the user who performed the action"),
+    actor_email: str | None = Query(None, description="Filter by the email of the user who performed the action"),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    current_user: dict = Depends(require_permission("audit_logs")),
 ):
     if from_time and to_time and from_time > to_time:
         raise HTTPException(400, "from_time must be earlier than or equal to to_time")
@@ -153,6 +156,7 @@ def read_audit_logs(
             _database_url,
             from_time=from_time, to_time=to_time,
             action=action or event_type, status=status,
+            actor_id=actor_id, actor_email=actor_email,
             limit=limit, offset=offset,
         )
     except RuntimeError as error:
@@ -161,13 +165,12 @@ def read_audit_logs(
     return {"items": logs, "total": total, "limit": limit, "offset": offset}
 
 
-# NOTE: /upload/yp and /upload/mcp are left open to anyone logged in (any
-# authenticated user) rather than gated by one of the four named scopes,
-# since they're just staging data for a match run. If you want them locked
-# down too, add dependencies=[Depends(get_current_user)] the same way.
-
-@app.post("/upload/yp", dependencies=[Depends(get_current_user)])
-async def upload_yp(request: Request, file: UploadFile = File(...)):
+@app.post("/upload/yp")
+async def upload_yp(
+    request: Request,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
     if not file.filename.endswith((".xlsx", ".xls")):
         raise HTTPException(400, "Expected an Excel file (.xlsx/.xls)")
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
@@ -184,13 +187,19 @@ async def upload_yp(request: Request, file: UploadFile = File(...)):
         _database_url, action="upload_yp", endpoint="POST /upload/yp",
         actor_ip=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
+        actor_id=current_user["id"], actor_email=current_user["email"],
+        actor_name=current_user.get("full_name"),
         metadata={"filename": file.filename, "record_count": len(yps)},
     )
     return {"loaded": len(yps)}
 
 
-@app.post("/upload/mcp", dependencies=[Depends(get_current_user)])
-async def upload_mcp(request: Request, file: UploadFile = File(...)):
+@app.post("/upload/mcp")
+async def upload_mcp(
+    request: Request,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
     if not file.filename.endswith((".xlsx", ".xls")):
         raise HTTPException(400, "Expected an Excel file (.xlsx/.xls)")
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
@@ -207,14 +216,22 @@ async def upload_mcp(request: Request, file: UploadFile = File(...)):
         _database_url, action="upload_mcp", endpoint="POST /upload/mcp",
         actor_ip=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
+        actor_id=current_user["id"], actor_email=current_user["email"],
+        actor_name=current_user.get("full_name"),
         metadata={"filename": file.filename, "record_count": len(mcps)},
     )
     return {"loaded": len(mcps)}
 
 
-# --- CHANGED: run_match scope required ---
-@app.post("/match/run", response_model=MatchRunResponse, dependencies=[Depends(require_permission("run_match"))])
-def run_match(request: Request, HOP_LIMIT: int = 3, MATCH_CAP: int | None = None, SHORTLIST_SIZE: int = 10):
+# --- run_match scope required; actor captured for audit log ---
+@app.post("/match/run", response_model=MatchRunResponse)
+def run_match(
+    request: Request,
+    HOP_LIMIT: int = 3,
+    MATCH_CAP: int | None = None,
+    SHORTLIST_SIZE: int = 10,
+    current_user: dict = Depends(require_permission("run_match")),
+):
     if not state["yps"]:
         raise HTTPException(400, "No YP data loaded — call /upload/yp first")
     if not state["mcps"]:
@@ -242,6 +259,8 @@ def run_match(request: Request, HOP_LIMIT: int = 3, MATCH_CAP: int | None = None
         _database_url, action="run_match", endpoint="POST /match/run",
         actor_ip=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
+        actor_id=current_user["id"], actor_email=current_user["email"],
+        actor_name=current_user.get("full_name"),
         metadata={
             "hop_limit": HOP_LIMIT, "match_cap": MATCH_CAP, "shortlist_size": SHORTLIST_SIZE,
             "matched_count": len(matches), "waitlisted_count": len(waitlist),
@@ -250,9 +269,9 @@ def run_match(request: Request, HOP_LIMIT: int = 3, MATCH_CAP: int | None = None
     return response
 
 
-# --- CHANGED: run_match scope required (it's exporting a match run) ---
-@app.get("/match/export", dependencies=[Depends(require_permission("run_match"))])
-def export_results(request: Request):
+# --- run_match scope required (exporting a match run); actor captured ---
+@app.get("/match/export")
+def export_results(request: Request, current_user: dict = Depends(require_permission("run_match"))):
     if state["last_result"] is None:
         raise HTTPException(404, "No match run yet — call POST /match/run first")
     tmp_dir = tempfile.mkdtemp()
@@ -263,6 +282,8 @@ def export_results(request: Request):
         _database_url, action="export_matches", endpoint="GET /match/export",
         actor_ip=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
+        actor_id=current_user["id"], actor_email=current_user["email"],
+        actor_name=current_user.get("full_name"),
         metadata={"filename": filename},
     )
     return FileResponse(
@@ -272,12 +293,13 @@ def export_results(request: Request):
     )
 
 
-# --- CHANGED: evaluate scope required ---
-@app.post("/evaluation/compare", dependencies=[Depends(require_permission("evaluate"))])
+# --- evaluate scope required; actor captured ---
+@app.post("/evaluation/compare")
 async def compare_evaluation(
     request: Request,
     manual_match_file: UploadFile = File(...),
     criteria_config_json: str | None = None,
+    current_user: dict = Depends(require_permission("evaluate")),
 ):
     if not state["yps"] or not state["mcps"]:
         raise HTTPException(400, "No YP/MCP data loaded — call /upload/yp and /upload/mcp first")
@@ -322,14 +344,16 @@ async def compare_evaluation(
         _database_url, action="compare_evaluation", endpoint="POST /evaluation/compare",
         actor_ip=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
+        actor_id=current_user["id"], actor_email=current_user["email"],
+        actor_name=current_user.get("full_name"),
         metadata={"filename": manual_match_file.filename},
     )
     return report
 
 
-# --- CHANGED: evaluate scope required ---
-@app.get("/evaluation/export", dependencies=[Depends(require_permission("evaluate"))])
-def export_evaluation(request: Request):
+# --- evaluate scope required; actor captured ---
+@app.get("/evaluation/export")
+def export_evaluation(request: Request, current_user: dict = Depends(require_permission("evaluate"))):
     if state["last_evaluation"] is None:
         raise HTTPException(404, "No evaluation yet — call POST /evaluation/compare first")
     tmp_dir = tempfile.mkdtemp()
@@ -340,6 +364,8 @@ def export_evaluation(request: Request):
         _database_url, action="export_evaluation", endpoint="GET /evaluation/export",
         actor_ip=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
+        actor_id=current_user["id"], actor_email=current_user["email"],
+        actor_name=current_user.get("full_name"),
         metadata={"filename": filename},
     )
     return FileResponse(

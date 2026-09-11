@@ -68,6 +68,7 @@ def get_role(database_url: str, role_id: int) -> dict | None:
 def create_user(
     database_url: str,
     email: str,
+    full_name: str,
     hashed_password: str,
     department: str,
     role_id: int | None,
@@ -77,11 +78,11 @@ def create_user(
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 """
-                INSERT INTO users (email, hashed_password, department, role_id, is_super_admin)
-                VALUES (%s, %s, %s, %s, %s)
-                RETURNING id, email, department, role_id, is_super_admin, is_active, must_change_password
+                INSERT INTO users (email, full_name, hashed_password, department, role_id, is_super_admin)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, email, full_name, department, role_id, is_super_admin, is_active, must_change_password
                 """,
-                (email, hashed_password, department, role_id, is_super_admin),
+                (email, full_name, hashed_password, department, role_id, is_super_admin),
             )
             return dict(cur.fetchone())
 
@@ -91,7 +92,7 @@ def get_user_by_email(database_url: str, email: str) -> dict | None:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 """
-                SELECT u.id, u.email, u.hashed_password, u.department, u.role_id,
+                SELECT u.id, u.email, u.full_name, u.hashed_password, u.department, u.role_id,
                        u.is_super_admin, u.is_active, u.must_change_password,
                        r.name AS role_name, r.permissions
                 FROM users u
@@ -109,7 +110,7 @@ def get_user_by_id(database_url: str, user_id: int) -> dict | None:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 """
-                SELECT u.id, u.email, u.department, u.role_id, u.is_super_admin,
+                SELECT u.id, u.email, u.full_name, u.department, u.role_id, u.is_super_admin,
                        u.is_active, u.must_change_password,
                        r.name AS role_name, r.permissions
                 FROM users u
@@ -127,7 +128,7 @@ def list_users(database_url: str) -> list[dict]:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 """
-                SELECT u.id, u.email, u.department, u.role_id, u.is_super_admin,
+                SELECT u.id, u.email, u.full_name, u.department, u.role_id, u.is_super_admin,
                        u.is_active, u.must_change_password, r.name AS role_name
                 FROM users u
                 LEFT JOIN roles r ON r.id = u.role_id
@@ -138,7 +139,7 @@ def list_users(database_url: str) -> list[dict]:
 
 
 def update_user(database_url: str, user_id: int, **fields) -> dict | None:
-    """fields: any of department, role_id, is_active"""
+    """fields: any of full_name, department, role_id, is_active"""
     if not fields:
         return get_user_by_id(database_url, user_id)
     set_clause = ", ".join(f"{k} = %s" for k in fields)
@@ -149,7 +150,7 @@ def update_user(database_url: str, user_id: int, **fields) -> dict | None:
                 f"""
                 UPDATE users SET {set_clause}
                 WHERE id = %s
-                RETURNING id, email, department, role_id, is_super_admin, is_active, must_change_password
+                RETURNING id, email, full_name, department, role_id, is_super_admin, is_active, must_change_password
                 """,
                 values,
             )

@@ -3,6 +3,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Users,
+  User,
   Plus,
   RefreshCw,
   AlertCircle,
@@ -69,6 +70,7 @@ export const AdminSection: React.FC<AdminSectionProps> = ({ currentUser }) => {
   const [isSubmittingUser, setIsSubmittingUser] = useState(false);
 
   // Form states - Edit User
+  const [editUserName, setEditUserName] = useState("");
   const [editUserDept, setEditUserDept] = useState("");
   const [editUserRoleId, setEditUserRoleId] = useState<string>("");
   const [editUserIsSuperAdmin, setEditUserIsSuperAdmin] = useState(false);
@@ -161,8 +163,11 @@ export const AdminSection: React.FC<AdminSectionProps> = ({ currentUser }) => {
   // Create User Handler
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUserEmail.trim() || !newUserDept.trim()) {
-      showBanner("error", "Email and Department are required.");
+    if (!newUserName.trim() || !newUserEmail.trim() || !newUserDept.trim()) {
+      showBanner(
+        "error",
+        "Full Name, Email Address, and Department are required.",
+      );
       return;
     }
 
@@ -170,6 +175,7 @@ export const AdminSection: React.FC<AdminSectionProps> = ({ currentUser }) => {
     try {
       const payload: AdminUserCreateRequest = {
         email: newUserEmail.trim(),
+        full_name: newUserName.trim(),
         department: newUserDept.trim(),
         role_id: newUserRoleId ? parseInt(newUserRoleId, 10) : null,
         is_super_admin: newUserIsSuperAdmin,
@@ -202,6 +208,7 @@ export const AdminSection: React.FC<AdminSectionProps> = ({ currentUser }) => {
   // Open Edit User
   const handleOpenEditUser = (user: AdminUser) => {
     setSelectedUserForEdit(user);
+    setEditUserName(user.full_name || user.name || "");
     setEditUserDept(user.department || "");
     setEditUserRoleId(user.role_id ? String(user.role_id) : "");
     setEditUserIsSuperAdmin(user.is_super_admin);
@@ -216,12 +223,43 @@ export const AdminSection: React.FC<AdminSectionProps> = ({ currentUser }) => {
 
     setIsSubmittingEditUser(true);
     try {
-      const payload: AdminUserUpdateRequest = {
-        department: editUserDept.trim() || undefined,
-        role_id: editUserRoleId ? parseInt(editUserRoleId, 10) : null,
-        is_super_admin: editUserIsSuperAdmin,
-        is_active: editUserIsActive,
-      };
+      // Body has only the fields being changed
+      const payload: AdminUserUpdateRequest = {};
+
+      const currentName =
+        selectedUserForEdit.full_name || selectedUserForEdit.name || "";
+      const trimmedName = editUserName.trim();
+      if (trimmedName !== currentName) {
+        payload.full_name = trimmedName || null;
+      }
+
+      if (
+        editUserDept.trim() &&
+        editUserDept.trim() !== selectedUserForEdit.department
+      ) {
+        payload.department = editUserDept.trim();
+      }
+
+      const newRoleId = editUserRoleId ? parseInt(editUserRoleId, 10) : null;
+      if (newRoleId !== selectedUserForEdit.role_id) {
+        payload.role_id = newRoleId;
+      }
+
+      if (editUserIsSuperAdmin !== selectedUserForEdit.is_super_admin) {
+        payload.is_super_admin = editUserIsSuperAdmin;
+      }
+
+      if (editUserIsActive !== selectedUserForEdit.is_active) {
+        payload.is_active = editUserIsActive;
+      }
+
+      if (Object.keys(payload).length === 0) {
+        showBanner("warning", "No changes detected to update.");
+        setIsEditUserModalOpen(false);
+        setSelectedUserForEdit(null);
+        setEditUserName("");
+        return;
+      }
 
       await apiService.updateAdminUser(selectedUserForEdit.id, payload);
       showBanner(
@@ -230,6 +268,7 @@ export const AdminSection: React.FC<AdminSectionProps> = ({ currentUser }) => {
       );
       setIsEditUserModalOpen(false);
       setSelectedUserForEdit(null);
+      setEditUserName("");
       await fetchAdminData();
     } catch (err: any) {
       showBanner("error", err.message || "Failed to update user");
@@ -335,7 +374,9 @@ export const AdminSection: React.FC<AdminSectionProps> = ({ currentUser }) => {
   const filteredUsers = users.filter((u) => {
     const q = searchQuery.toLowerCase();
     const roleName = roles.find((r) => r.id === u.role_id)?.name || "";
+    const userName = (u.name || u.full_name || "").toLowerCase();
     return (
+      userName.includes(q) ||
       u.email.toLowerCase().includes(q) ||
       u.department.toLowerCase().includes(q) ||
       roleName.toLowerCase().includes(q)
@@ -470,6 +511,7 @@ export const AdminSection: React.FC<AdminSectionProps> = ({ currentUser }) => {
             <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 font-semibold uppercase tracking-wider text-[10px]">
               <tr>
                 <th className="px-4 py-3">ID</th>
+                <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Email</th>
                 <th className="px-4 py-3">Department</th>
                 <th className="px-4 py-3">Role</th>
@@ -482,7 +524,7 @@ export const AdminSection: React.FC<AdminSectionProps> = ({ currentUser }) => {
             <tbody className="divide-y divide-slate-100">
               {isLoading && users.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-10 text-slate-400">
+                  <td colSpan={9} className="text-center py-10 text-slate-400">
                     <div className="flex items-center justify-center space-x-2">
                       <RefreshCw className="w-4 h-4 animate-spin text-orange-600" />
                       <span>Loading users from /admin/users...</span>
@@ -491,13 +533,14 @@ export const AdminSection: React.FC<AdminSectionProps> = ({ currentUser }) => {
                 </tr>
               ) : filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-10 text-slate-500">
+                  <td colSpan={9} className="text-center py-10 text-slate-500">
                     No users match your criteria.
                   </td>
                 </tr>
               ) : (
                 filteredUsers.map((u) => {
                   const assignedRole = roles.find((r) => r.id === u.role_id);
+                  const displayName = u.name?.trim() || u.full_name?.trim();
                   return (
                     <tr
                       key={u.id}
@@ -506,9 +549,23 @@ export const AdminSection: React.FC<AdminSectionProps> = ({ currentUser }) => {
                       <td className="px-4 py-3 font-mono text-slate-500">
                         {u.id}
                       </td>
+                      <td className="px-4 py-3 text-slate-900">
+                        {displayName ? (
+                          <div className="flex items-center space-x-1.5">
+                            <User className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                            <span className="font-semibold text-slate-900">
+                              {displayName}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 italic text-[11px]">
+                            No name set
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 font-medium text-slate-900">
                         <div className="flex items-center space-x-2">
-                          <Mail className="w-3.5 h-3.5 text-slate-400" />
+                          <Mail className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
                           <span>{u.email}</span>
                         </div>
                       </td>
@@ -652,16 +709,14 @@ export const AdminSection: React.FC<AdminSectionProps> = ({ currentUser }) => {
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Full Name / Display Name{" "}
-                    <span className="text-slate-400 font-normal">
-                      (Optional)
-                    </span>
+                    Full Name *
                   </label>
                   <input
                     type="text"
                     value={newUserName}
                     onChange={(e) => setNewUserName(e.target.value)}
-                    placeholder="e.g. Sarah Connor, Matching Operator"
+                    placeholder="e.g. Sarah Connor"
+                    required
                     className="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 rounded-xl px-3.5 py-2 text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-orange-500"
                   />
                 </div>
@@ -802,6 +857,25 @@ export const AdminSection: React.FC<AdminSectionProps> = ({ currentUser }) => {
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Full Name{" "}
+                    <span className="text-slate-400 font-normal">
+                      (Optional)
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    value={editUserName}
+                    onChange={(e) => setEditUserName(e.target.value)}
+                    placeholder="e.g. Sarah Connor (Optional)"
+                    className="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 rounded-xl px-3.5 py-2 text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Optional. Fill in name for accounts created without a name.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Department
                   </label>
                   <input
@@ -821,6 +895,12 @@ export const AdminSection: React.FC<AdminSectionProps> = ({ currentUser }) => {
                     selectedRoleId={editUserRoleId}
                     roles={roles}
                     onChange={(id) => setEditUserRoleId(id)}
+                    userName={
+                      editUserName ||
+                      selectedUserForEdit.name ||
+                      selectedUserForEdit.full_name ||
+                      undefined
+                    }
                     userEmail={selectedUserForEdit.email}
                     userDepartment={editUserDept}
                     onCreateRoleWithExistingDetails={(name, dept, perms) =>

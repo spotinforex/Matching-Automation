@@ -276,6 +276,8 @@ export class ApiService {
     to_time?: string | null;
     action?: string | null;
     status?: string | null;
+    actor_email?: string | null;
+    actor_id?: number | null;
     limit?: number;
     offset?: number;
   }): Promise<AuditLogsResponse> {
@@ -284,6 +286,8 @@ export class ApiService {
     if (params?.to_time) query.append('to_time', params.to_time);
     if (params?.action) query.append('action', params.action);
     if (params?.status) query.append('status', params.status);
+    if (params?.actor_email) query.append('actor_email', params.actor_email);
+    if (params?.actor_id != null) query.append('actor_id', params.actor_id.toString());
     query.append('limit', (params?.limit ?? 100).toString());
     query.append('offset', (params?.offset ?? 0).toString());
 
