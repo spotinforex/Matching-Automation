@@ -1,6 +1,14 @@
-import React, { useState } from 'react';
-import { X, Server, CheckCircle2, AlertCircle, RefreshCw, Code, Globe } from 'lucide-react';
-import { DEFAULT_BACKEND_URL } from '../services/api';
+import React, { useState } from "react";
+import {
+  X,
+  Server,
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
+  Code,
+  Globe,
+} from "lucide-react";
+import { DEFAULT_BACKEND_URL } from "../services/api";
 
 interface BackendSettingsModalProps {
   isOpen: boolean;
@@ -41,8 +49,12 @@ export const BackendSettingsModal: React.FC<BackendSettingsModalProps> = ({
               <Server className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-base text-slate-900">Backend FastAPI Connection Settings</h3>
-              <p className="text-xs text-slate-500">Configure matching pipeline backend host & endpoints</p>
+              <h3 className="font-bold text-base text-slate-900">
+                Backend FastAPI Connection Settings
+              </h3>
+              <p className="text-xs text-slate-500">
+                Configure matching pipeline backend host & endpoints
+              </p>
             </div>
           </div>
           <button
@@ -93,13 +105,17 @@ export const BackendSettingsModal: React.FC<BackendSettingsModalProps> = ({
           {/* Health Status Box */}
           <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500">Endpoint Health Status</span>
+              <span className="text-xs font-semibold text-slate-500">
+                Endpoint Health Status
+              </span>
               <button
                 onClick={onCheckHealth}
                 disabled={isCheckingHealth}
                 className="flex items-center space-x-1 text-xs text-orange-600 hover:text-orange-700 font-medium"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${isCheckingHealth ? 'animate-spin' : ''}`} />
+                <RefreshCw
+                  className={`w-3.5 h-3.5 ${isCheckingHealth ? "animate-spin" : ""}`}
+                />
                 <span>Ping GET /health</span>
               </button>
             </div>
@@ -108,13 +124,15 @@ export const BackendSettingsModal: React.FC<BackendSettingsModalProps> = ({
               {healthStatus?.ok ? (
                 <>
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                  <span className="text-emerald-800 text-xs font-semibold">{healthStatus.statusText}</span>
+                  <span className="text-emerald-800 text-xs font-semibold">
+                    {healthStatus.statusText}
+                  </span>
                 </>
               ) : (
                 <>
                   <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
                   <span className="text-rose-800 text-xs font-semibold">
-                    {healthStatus?.statusText || 'Not verified'}
+                    {healthStatus?.statusText || "Not verified"}
                   </span>
                 </>
               )}
@@ -129,32 +147,62 @@ export const BackendSettingsModal: React.FC<BackendSettingsModalProps> = ({
             </div>
             <div className="space-y-1.5 font-mono text-[11px] bg-slate-50 p-3 rounded-lg border border-slate-200 text-slate-700">
               <div className="flex items-center justify-between">
-                <span className="text-emerald-700 font-bold">POST /upload/yp</span>
-                <span className="text-slate-500">Multipart .xlsx → &#123;"loaded": number&#125;</span>
+                <span className="text-emerald-700 font-bold">
+                  POST /auth/login
+                </span>
+                <span className="text-slate-500">
+                  JSON/Form credentials → token
+                </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-emerald-700 font-bold">POST /upload/mcp</span>
-                <span className="text-slate-500">Multipart .xlsx → &#123;"loaded": number&#125;</span>
+                <span className="text-blue-700 font-bold">GET /auth/me</span>
+                <span className="text-slate-500">
+                  Current user info & scopes
+                </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-emerald-700 font-bold">POST /match/run</span>
-                <span className="text-slate-500">?HOP_LIMIT=10&MATCH_CAP=...&SHORTLIST_SIZE=10</span>
+                <span className="text-emerald-700 font-bold">
+                  POST /upload/yp, /upload/mcp
+                </span>
+                <span className="text-slate-500">Authenticated ingestion</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-blue-700 font-bold">GET /match/export</span>
-                <span className="text-slate-500">Download formatted .xlsx workbook</span>
+                <span className="text-emerald-700 font-bold">
+                  POST /match/run
+                </span>
+                <span className="text-orange-700 font-bold">[run_match]</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-emerald-700 font-bold">POST /evaluation/compare</span>
-                <span className="text-slate-500">Compare manual match → drift report JSON</span>
+                <span className="text-blue-700 font-bold">
+                  GET /match/export
+                </span>
+                <span className="text-orange-700 font-bold">[run_match]</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-blue-700 font-bold">GET /evaluation/export</span>
-                <span className="text-slate-500">Download evaluation report .xlsx</span>
+                <span className="text-emerald-700 font-bold">
+                  POST /evaluation/compare
+                </span>
+                <span className="text-orange-700 font-bold">[evaluate]</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-blue-700 font-bold">
+                  GET /evaluation/export
+                </span>
+                <span className="text-orange-700 font-bold">[evaluate]</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-blue-700 font-bold">GET /audit/logs</span>
+                <span className="text-orange-700 font-bold">[audit_logs]</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-blue-700 font-bold">GET /endpoints</span>
+                <span className="text-orange-700 font-bold">
+                  [endpoints_list]
+                </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-blue-700 font-bold">GET /health</span>
-                <span className="text-slate-500">Liveness check → &#123;"status": "ok"&#125;</span>
+                <span className="text-slate-500">Public liveness check</span>
               </div>
             </div>
           </div>
@@ -173,4 +221,3 @@ export const BackendSettingsModal: React.FC<BackendSettingsModalProps> = ({
     </div>
   );
 };
-

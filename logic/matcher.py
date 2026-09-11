@@ -109,6 +109,21 @@ class Matcher:
         gender_rank = 0 if gender == "female" else 1 if gender == "male" else 2
         return (0 if is_pwd else 1, gender_rank)
 
+    def _trade_family_and_gender(self, trade):
+        """
+        Splits a canonical trade string like "garment_female" or
+        "footwear_both" into its (family, gender) parts. Only garment/
+        footwear trades carry a gender component — leather trades and
+        "unknown" don't, so this returns (None, None) for anything else.
+        Used both by trade_matches() and by run()'s pre-check for YPs
+        who need a "both genders" MCP.
+        """
+        trade = str(trade or "").strip().lower()
+        if trade.startswith("garment_") or trade.startswith("footwear_"):
+            family, gender = trade.split("_", 1)
+            return family, gender
+        return None, None
+
     def trade_matches(self, yp_trade, mcp_trade):
         """
         yp_trade / mcp_trade are expected to already be canonical skill
@@ -144,14 +159,26 @@ class Matcher:
         if yp_trade.startswith("garment_") and mcp_trade.startswith("garment_"):
             yp_gender = yp_trade.split("_", 1)[1]
             mcp_gender = mcp_trade.split("_", 1)[1]
-            if yp_gender == "both" or mcp_gender == "both":
+            # A YP who does "both" genders needs an MCP that also does
+            # "both" — an MCP restricted to a single gender can only ever
+            # cover half of what a "both" YP offers, so it's not a real
+            # match. This must be checked before the mcp_gender == "both"
+            # shortcut below, since that shortcut is one-directional (an MCP
+            # doing "both" CAN take any single-gender YP, but the reverse
+            # isn't true).
+            if yp_gender == "both":
+                return mcp_gender == "both"
+            if mcp_gender == "both":
                 return True
             return yp_gender == mcp_gender
 
         if yp_trade.startswith("footwear_") and mcp_trade.startswith("footwear_"):
             yp_gender = yp_trade.split("_", 1)[1]
             mcp_gender = mcp_trade.split("_", 1)[1]
-            if yp_gender == "both" or mcp_gender == "both":
+            # Same "both genders" asymmetry as the garment branch above.
+            if yp_gender == "both":
+                return mcp_gender == "both"
+            if mcp_gender == "both":
                 return True
             return yp_gender == mcp_gender
 
@@ -410,6 +437,47 @@ class Matcher:
             logger.warning(
                 "run() dropping %d mcp(s) with unclassified trade from the matching pool: %s",
                 len(unknown_trade_mcps), [m.id for m in unknown_trade_mcps],
+            )
+
+        ####################################################
+        # "Both genders" YPs — an MCP restricted to one gender can't serve
+        # a "_both" YP (see trade_matches()). If no MCP anywhere in the
+        # pool offers "_both" for the same trade family (garment/footwear),
+        # this YP can never be matched regardless of hop_limit, so route
+        # to waitlist now with a specific reason instead of letting them
+        # exhaust every hop round and land in the generic
+        # "No capacity within hop limit" bucket.
+        #
+        # Note: this only catches the case where NO "_both" MCP exists
+        # anywhere in the pool. If a "_both" MCP does exist but is out of
+        # hop range or already at capacity, that YP still goes through the
+        # normal hop rounds and, if never placed, ends up with the generic
+        # waitlist reason further down.
+        ####################################################
+
+        both_gender_mcp_families = set()
+        for mcp in mcps:
+            family, gender = self._trade_family_and_gender(mcp.skill)
+            if family and gender == "both":
+                both_gender_mcp_families.add(family)
+
+        no_both_yps = []
+        for yp in yps:
+            family, gender = self._trade_family_and_gender(yp.skill)
+            if family and gender == "both" and family not in both_gender_mcp_families:
+                no_both_yps.append(yp)
+
+        if no_both_yps:
+            no_both_ids = {id(p) for p in no_both_yps}
+            yps = [p for p in yps if id(p) not in no_both_ids]
+            for yp in no_both_yps:
+                waitlist.append({
+                    "yp_id": yp.id,
+                    "reason": "No MCP offering both genders available",
+                })
+            logger.info(
+                "run() removed %d yp(s) needing a both-gender MCP with none available in the pool -> waitlist",
+                len(no_both_yps),
             )
 
         ####################################################

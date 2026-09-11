@@ -157,3 +157,53 @@ export interface EvaluationReport {
   rows: EvaluationRow[];
   config_used: EvaluationCriteriaConfig;
 }
+
+export interface AuthUser {
+  id?: string | number;
+  username?: string;
+  email?: string;
+  full_name?: string;
+  name?: string;
+  role?: string;
+  roles?: string[];
+  is_superuser?: boolean;
+  is_admin?: boolean;
+  permissions?: string[];
+  scopes?: string[];
+  created_at?: string;
+  [key: string]: any;
+}
+
+export interface LoginResponse {
+  access_token?: string;
+  token?: string;
+  token_type?: string;
+  user?: AuthUser;
+  [key: string]: any;
+}
+
+export interface AuditLogItem {
+  id?: string | number;
+  action: string;
+  endpoint?: string;
+  actor_ip?: string | null;
+  user_agent?: string | null;
+  status?: string;
+  created_at?: string;
+  timestamp?: string;
+  metadata?: Record<string, any>;
+  [key: string]: any;
+}
+
+export interface AuditLogsResponse {
+  items: AuditLogItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface BackendEndpoint {
+  path: string;
+  methods: string[];
+}
+
