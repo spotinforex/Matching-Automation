@@ -16,7 +16,7 @@ interface AuthModalProps {
   onClose: () => void;
   onLoginSuccess: (user: AuthUser, token: string) => void;
   onLogin: (
-    username: string,
+    email: string,
     pass: string,
   ) => Promise<{ token: string; user?: AuthUser }>;
   onSetManualToken?: (token: string) => Promise<AuthUser>;
@@ -28,7 +28,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onLoginSuccess,
   onLogin,
 }) => {
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -39,8 +39,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const handleCredentialsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username.trim() || !password.trim()) {
-      setErrorMessage("Please enter both email/username and password.");
+    if (!email.trim() || !password.trim()) {
+      setErrorMessage("Please enter both email and password.");
       return;
     }
 
@@ -49,8 +49,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setSuccessMessage(null);
 
     try {
-      const res = await onLogin(username.trim(), password.trim());
-      const resolvedUser: AuthUser = res.user || { username: username.trim() };
+      const res = await onLogin(email.trim(), password.trim());
+      const resolvedUser: AuthUser = res.user || { email: email.trim() };
       setSuccessMessage(
         `Authenticated as ${resolvedUser.username || resolvedUser.email || "User"}`,
       );
@@ -115,9 +115,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 Email
               </label>
               <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="user@organization.com"
                 autoFocus
                 required

@@ -13,7 +13,7 @@ import { AuthUser } from "../types";
 
 interface LoginPageProps {
   onLogin: (
-    usernameOrEmail: string,
+    email: string,
     pass: string,
   ) => Promise<{ token: string; user?: AuthUser }>;
   onLoginSuccess: (user: AuthUser, token: string) => void;
@@ -29,7 +29,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   isCheckingHealth,
   onCheckHealth,
 }) => {
-  const [emailOrUsername, setEmailOrUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -38,8 +38,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!emailOrUsername.trim() || !password.trim()) {
-      setErrorMessage("Please enter both email/username and password.");
+    if (!email.trim() || !password.trim()) {
+      setErrorMessage("Please enter both email and password.");
       return;
     }
 
@@ -48,9 +48,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     setSuccessMessage(null);
 
     try {
-      const res = await onLogin(emailOrUsername.trim(), password.trim());
+      const res = await onLogin(email.trim(), password.trim());
       const resolvedUser: AuthUser = res.user || {
-        username: emailOrUsername.trim(),
+        email: email.trim(),
       };
       setSuccessMessage(
         `Authenticated as ${resolvedUser.username || resolvedUser.email || "User"}`,
@@ -96,7 +96,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
               Sign In to Your Account
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Enter your email or username and password
+              Enter your email and password
             </p>
           </div>
 
@@ -123,12 +123,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Email or Username
+                Email
               </label>
               <input
-                type="text"
-                value={emailOrUsername}
-                onChange={(e) => setEmailOrUsername(e.target.value)}
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="user@organization.com or username"
                 autoFocus
                 required

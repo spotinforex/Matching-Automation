@@ -146,60 +146,24 @@ export class ApiService {
   }
 
   // --- Auth API Endpoints ---
-  public async login(usernameOrEmail: string, password: string): Promise<{ token: string; user?: AuthUser }> {
-    // Attempt JSON login first (standard FastAPI body)
-    let token = '';
-    let user: AuthUser | undefined;
+  public async login(email: string, password: string): Promise<{ token: string; user?: AuthUser }> {
+    const response = await fetch(`${this.baseUrl}/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({ email, password }),
+      credentials: 'include',
+    });
 
-    try {
-      const response = await fetch(`${this.baseUrl}/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify({
-          username: usernameOrEmail,
-          email: usernameOrEmail,
-          password: password,
-        }),
-        credentials: 'include',
-      });
-
-      if (response.ok) {
-        const data: LoginResponse = await response.json();
-        token = data.access_token || data.token || '';
-        user = data.user;
-      } else if (response.status === 422 || response.status === 400) {
-        // Fallback to OAuth2 password request form (x-www-form-urlencoded)
-        const formParams = new URLSearchParams();
-        formParams.append('username', usernameOrEmail);
-        formParams.append('password', password);
-
-        // Try /auth/login or /auth/token
-        const formResp = await fetch(`${this.baseUrl}/auth/login`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Accept': 'application/json',
-          },
-          body: formParams.toString(),
-          credentials: 'include',
-        });
-
-        if (formResp.ok) {
-          const formData: LoginResponse = await formResp.json();
-          token = formData.access_token || formData.token || '';
-          user = formData.user;
-        } else {
-          throw await this.parseResponseError(formResp, 'Login failed');
-        }
-      } else {
-        throw await this.parseResponseError(response, 'Login failed');
-      }
-    } catch (err: any) {
-      throw err;
+    if (!response.ok) {
+      throw await this.parseResponseError(response, 'Login failed');
     }
+
+    const data: LoginResponse = await response.json();
+    const token = data.access_token || data.token || '';
+    let user = data.user;
 
     if (!token) {
       throw new Error('Authentication succeeded but no access token was returned by the server.');
@@ -212,10 +176,9 @@ export class ApiService {
       try {
         user = await this.getMe();
       } catch {
-        // Fallback user record based on username input
+        // Fallback user record based on the email used to sign in
         user = {
-          username: usernameOrEmail,
-          email: usernameOrEmail.includes('@') ? usernameOrEmail : undefined,
+          email,
         };
       }
     }
