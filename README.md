@@ -29,10 +29,14 @@ Live service: https://matching-automation.vercel.app
 7. **Export** the full result set — matches, waitlist, and a round by round
    summary — as a formatted `.xlsx` workbook with richer columns for gender,
    PWD, trade area, and trade type for both YPs and MCPs.
+8. **Compare against manual matching**: upload a manually-matched reference
+   sheet and get a drift/accuracy report — exact/equivalent/divergent counts,
+   per-criterion compliance rates, and a full per-YP audit trail — then
+   export that report as its own `.xlsx`.
 
 ## How matching works, in plain terms
 
-- YPs and MCPs in the *same* landmark (for example both near "Ariaria") are
+- YPs and MCPs in the _same_ landmark (for example both near "Ariaria") are
   matched first, since that is the shortest and most convenient pairing.
 - The matcher now applies a clear priority order so that PWD YPs are handled
   first, then women-first matching is preferred where applicable, and only
@@ -51,27 +55,80 @@ Live service: https://matching-automation.vercel.app
 - "Travel time" throughout the results is minutes of estimated driving time
   between the YP and the MCP, not a straight line distance.
 
+## Authentication & access control
+
+The app is internal-only — there is no self-signup. A super admin creates
+every account, assigns it to a department, and gives it a role built from
+four permission scopes:
+
+| Scope            | Covers                                               |
+| ---------------- | ---------------------------------------------------- |
+| `run_match`      | `POST /match/run`, `GET /match/export`               |
+| `evaluate`       | `POST /evaluation/compare`, `GET /evaluation/export` |
+| `audit_logs`     | `GET /audit/logs`                                    |
+| `endpoints_list` | `GET /endpoints`                                     |
+
+A **super admin** account bypasses every scope check and is the only role
+allowed to manage roles and users (`/admin/*`).
+
+**Login is email + password only** — there's no username field.
+
+**New accounts get a generated password**, emailed to them automatically,
+and must change it on first login. Roles are named permission bundles
+scoped to a department (e.g. "Matching Analyst" in Operations with
+`run_match` + `evaluate`) — create as many as your departments need via
+`POST /admin/roles`, then assign them to users via `POST /admin/users`.
+
+See `auth_system/README.md` for full setup (env vars, first-super-admin
+bootstrap, SMTP config) and the complete `/auth/*` and `/admin/*` endpoint
+reference.
+
 ## API endpoints
 
-| Method | Path            | Description                                              |
-|--------|------------------|------------------------------------------------------------|
-| GET    | `/health`         | Liveness check                                              |
-| POST   | `/upload/yp`       | Upload the YP source `.xlsx`, parses and stores in memory   |
-| POST   | `/upload/mcp`      | Upload the MCP source `.xlsx`, parses and stores in memory  |
-| POST   | `/match/run`        | Runs geocoding + matching end to end, returns results (accepts optional `HOP_LIMIT`, `MATCH_CAP`, and shortlist controls such as `SHORTLIST_LIMIT`) |
-| GET    | `/match/export`     | Downloads the last match run as a formatted `.xlsx`           |
+| Method | Path                    | Auth / scope       | Description                                                                                                                                         |
+| ------ | ----------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/health`               | Public             | Liveness check                                                                                                                                      |
+| POST   | `/auth/login`           | Public             | Email + password → JWT                                                                                                                              |
+| POST   | `/auth/change-password` | Any logged-in user | Set a new password (clears the forced-change flag)                                                                                                  |
+| GET    | `/auth/me`              | Any logged-in user | Current user's identity, department, role, and permissions                                                                                          |
+| POST   | `/admin/roles`          | Super admin        | Create a role (name, department, permission scopes)                                                                                                 |
+| GET    | `/admin/roles`          | Super admin        | List all roles                                                                                                                                      |
+| POST   | `/admin/users`          | Super admin        | Create a user; emails them a generated temp password                                                                                                |
+| GET    | `/admin/users`          | Super admin        | List all users                                                                                                                                      |
+| PATCH  | `/admin/users/{id}`     | Super admin        | Update a user's name, department, role, or active status                                                                                            |
+| DELETE | `/admin/users/{id}`     | Super admin        | Delete a user (blocked for your own account or the last super admin)                                                                                |
+| POST   | `/upload/yp`            | Any logged-in user | Upload the YP source `.xlsx`, parses and stores in memory                                                                                           |
+| POST   | `/upload/mcp`           | Any logged-in user | Upload the MCP source `.xlsx`, parses and stores in memory                                                                                          |
+| POST   | `/match/run`            | `run_match`        | Runs geocoding + matching end to end, returns results (accepts optional `HOP_LIMIT`, `MATCH_CAP`, and shortlist controls such as `SHORTLIST_LIMIT`) |
+| GET    | `/match/export`         | `run_match`        | Downloads the last match run as a formatted `.xlsx`                                                                                                 |
+| POST   | `/evaluation/compare`   | `evaluate`         | Compares the last match run against a manually-matched reference sheet                                                                              |
+| GET    | `/evaluation/export`    | `evaluate`         | Downloads the last evaluation as a formatted `.xlsx`                                                                                                |
+| GET    | `/audit/logs`           | `audit_logs`       | Lists audit events, with filters (`actor_email`, `actor_id`, `action`, `status`, `from_time`, `to_time`)                                            |
+| GET    | `/endpoints`            | `endpoints_list`   | Lists every registered route and its methods                                                                                                        |
 
-**Typical flow:** `POST /upload/yp` → `POST /upload/mcp` → `POST /match/run`
-→ `GET /match/export`.
+**Typical flow:** `POST /auth/login` → `POST /upload/yp` → `POST /upload/mcp`
+→ `POST /match/run` → `GET /match/export`.
 
-> **Note on state:** uploaded data and the last match result are currently
-> held in an in memory dict on the server, not a database. This means the
-> app must run as a single worker/instance — restarting it, or scaling to
-> more than one instance, clears the uploaded data. Swap this for a proper
-> DB/session store before running this for multiple concurrent users.
+> **Note on state:** uploaded data and the last match result are still held
+> in an in-memory dict on the server, not a database — this part hasn't
+> changed. This means the app must run as a single worker/instance —
+> restarting it, or scaling to more than one instance, clears the uploaded
+> data. Swap this for a proper DB/session store before running this for
+> multiple concurrent users. Users, roles, and audit logs, by contrast,
+> **are** persisted in Postgres/Supabase (`DATABASE_URL`) and survive
+> restarts.
 
 Cloud Run injects its own `PORT` environment variable at runtime, which the
 container respects automatically.
+
+## Audit logging
+
+Every logged action (`run_match`, `export_matches`, `compare_evaluation`,
+`export_evaluation`, `upload_yp`, `upload_mcp`) now records **who** did it —
+`actor_id`, `actor_email`, and `actor_name` — alongside the existing IP,
+user agent, and action-specific metadata. `GET /audit/logs` can be filtered
+by `actor_email` or `actor_id` to pull one person's history. Log entries
+written before this change have `null` actor fields.
 
 ## Logging
 
@@ -83,4 +140,3 @@ where time is being spent or where a run failed, without needing to
 reproduce the issue locally. Set the log level in `main.py`'s
 `logging.basicConfig(...)` call (currently `DEBUG`; drop to `INFO` to reduce
 noise in production).
-
