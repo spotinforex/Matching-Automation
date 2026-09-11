@@ -112,13 +112,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           <form onSubmit={handleCredentialsSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Email or Username
+                Email
               </label>
               <input
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="user@organization.com or username"
+                placeholder="user@organization.com"
                 autoFocus
                 required
                 className="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 focus:bg-white rounded-xl px-3.5 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
