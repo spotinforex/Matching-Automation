@@ -7,6 +7,11 @@ import {
   LoginResponse,
   AuditLogsResponse,
   BackendEndpoint,
+  AdminRole,
+  AdminRoleCreateRequest,
+  AdminUser,
+  AdminUserCreateRequest,
+  AdminUserUpdateRequest,
 } from '../types';
 
 export const DEFAULT_BACKEND_URL = 'http://localhost:8000';
@@ -119,7 +124,20 @@ export class ApiService {
     try {
       const parsed = JSON.parse(errorText);
       if (parsed && parsed.detail) {
-        detailMessage = typeof parsed.detail === 'string' ? parsed.detail : JSON.stringify(parsed.detail);
+        if (Array.isArray(parsed.detail)) {
+          detailMessage = parsed.detail
+            .map((d: any) => {
+              const field = Array.isArray(d.loc) ? d.loc[d.loc.length - 1] : '';
+              return field ? `${field}: ${d.msg}` : d.msg || JSON.stringify(d);
+            })
+            .join('; ');
+        } else if (typeof parsed.detail === 'string') {
+          detailMessage = parsed.detail;
+        } else {
+          detailMessage = JSON.stringify(parsed.detail);
+        }
+      } else if (parsed && parsed.message) {
+        detailMessage = typeof parsed.message === 'string' ? parsed.message : JSON.stringify(parsed.message);
       }
     } catch {
       // Keep raw errorText if not JSON
@@ -226,6 +244,7 @@ export class ApiService {
         'Accept': 'application/json',
       },
       body: JSON.stringify({
+        current_password: oldPassword,
         old_password: oldPassword,
         new_password: newPassword,
         password: newPassword,
@@ -292,6 +311,104 @@ export class ApiService {
     }
 
     return await response.json();
+  }
+
+  // --- Admin Endpoints (STRICTLY SUPER ADMIN ONLY) ---
+  public async getAdminRoles(): Promise<AdminRole[]> {
+    const response = await this.fetchWithAuth(`${this.baseUrl}/admin/roles`, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+    });
+
+    if (!response.ok) {
+      throw await this.parseResponseError(response, 'Failed to fetch roles');
+    }
+
+    return await response.json();
+  }
+
+  public async createAdminRole(payload: AdminRoleCreateRequest): Promise<AdminRole> {
+    const response = await this.fetchWithAuth(`${this.baseUrl}/admin/roles`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw await this.parseResponseError(response, 'Failed to create role');
+    }
+
+    return await response.json();
+  }
+
+  public async getAdminUsers(): Promise<AdminUser[]> {
+    const response = await this.fetchWithAuth(`${this.baseUrl}/admin/users`, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+    });
+
+    if (!response.ok) {
+      throw await this.parseResponseError(response, 'Failed to fetch users');
+    }
+
+    return await response.json();
+  }
+
+  public async createAdminUser(payload: AdminUserCreateRequest): Promise<{ user?: AdminUser; warning?: string }> {
+    const response = await this.fetchWithAuth(`${this.baseUrl}/admin/users`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    // The backend may return 201 with UserResponse, or 201 with HTTPException message if email sending failed
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok && response.status !== 201) {
+      throw await this.parseResponseError(response, 'Failed to create user');
+    }
+
+    // Check if error message was returned in 201
+    if (data.detail && typeof data.detail === 'string') {
+      return { warning: data.detail };
+    }
+
+    return { user: data };
+  }
+
+  public async updateAdminUser(userId: number, payload: AdminUserUpdateRequest): Promise<AdminUser> {
+    const response = await this.fetchWithAuth(`${this.baseUrl}/admin/users/${userId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw await this.parseResponseError(response, 'Failed to update user');
+    }
+
+    return await response.json();
+  }
+
+  public async deleteAdminUser(userId: number): Promise<void> {
+    const response = await this.fetchWithAuth(`${this.baseUrl}/admin/users/${userId}`, {
+      method: 'DELETE',
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok && response.status !== 204) {
+      throw await this.parseResponseError(response, 'Failed to delete user');
+    }
   }
 
   // --- Core Pipeline Operations ---

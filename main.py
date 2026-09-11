@@ -45,7 +45,7 @@ from dotenv import load_dotenv
 import logging
 
 # --- NEW: auth imports ---
-from auth_system.dependencies import require_permission
+from auth_system.dependencies import require_permission, get_current_user
 from auth_system.routers.auth_router import router as auth_router
 from auth_system.routers.admin_router import router as admin_router
 
@@ -71,7 +71,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH"],
+    allow_methods=["GET", "POST", "PATCH","DELETE"],
     allow_headers=["*"],
 )
 
@@ -166,7 +166,7 @@ def read_audit_logs(
 # since they're just staging data for a match run. If you want them locked
 # down too, add dependencies=[Depends(get_current_user)] the same way.
 
-@app.post("/upload/yp")
+@app.post("/upload/yp", dependencies=[Depends(get_current_user)])
 async def upload_yp(request: Request, file: UploadFile = File(...)):
     if not file.filename.endswith((".xlsx", ".xls")):
         raise HTTPException(400, "Expected an Excel file (.xlsx/.xls)")
@@ -189,7 +189,7 @@ async def upload_yp(request: Request, file: UploadFile = File(...)):
     return {"loaded": len(yps)}
 
 
-@app.post("/upload/mcp")
+@app.post("/upload/mcp", dependencies=[Depends(get_current_user)])
 async def upload_mcp(request: Request, file: UploadFile = File(...)):
     if not file.filename.endswith((".xlsx", ".xls")):
         raise HTTPException(400, "Expected an Excel file (.xlsx/.xls)")

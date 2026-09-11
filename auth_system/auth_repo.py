@@ -170,3 +170,20 @@ def touch_last_login(database_url: str, user_id: int) -> None:
     with _conn(database_url) as conn:
         with conn.cursor() as cur:
             cur.execute("UPDATE users SET last_login_at = now() WHERE id = %s", (user_id,))
+
+
+def delete_user(database_url: str, user_id: int) -> bool:
+    """Returns True if a row was deleted, False if no such user existed."""
+    with _conn(database_url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+            return cur.rowcount > 0
+
+
+def count_active_super_admins(database_url: str) -> int:
+    with _conn(database_url) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT count(*) FROM users WHERE is_super_admin = true AND is_active = true"
+            )
+            return cur.fetchone()[0]

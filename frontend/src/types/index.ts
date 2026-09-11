@@ -164,10 +164,15 @@ export interface AuthUser {
   email?: string;
   full_name?: string;
   name?: string;
+  department?: string;
   role?: string;
+  role_id?: number | null;
   roles?: string[];
   is_superuser?: boolean;
   is_admin?: boolean;
+  is_super_admin?: boolean;
+  is_active?: boolean;
+  must_change_password?: boolean;
   permissions?: string[];
   scopes?: string[];
   created_at?: string;
@@ -178,8 +183,49 @@ export interface LoginResponse {
   access_token?: string;
   token?: string;
   token_type?: string;
+  must_change_password?: boolean;
   user?: AuthUser;
   [key: string]: any;
+}
+
+export type ValidPermissionScope = 'run_match' | 'evaluate' | 'audit_logs' | 'endpoints_list';
+
+export interface AdminRole {
+  id: number;
+  name: string;
+  department: string;
+  permissions: string[];
+}
+
+export interface AdminRoleCreateRequest {
+  name: string;
+  department: string;
+  permissions: string[];
+}
+
+export interface AdminUser {
+  id: number;
+  email: string;
+  department: string;
+  role_id: number | null;
+  is_super_admin: boolean;
+  is_active: boolean;
+  must_change_password: boolean;
+}
+
+export interface AdminUserCreateRequest {
+  email: string;
+  department: string;
+  role_id?: number | null;
+  is_super_admin: boolean;
+}
+
+export interface AdminUserUpdateRequest {
+  email?: string;
+  department?: string;
+  role_id?: number | null;
+  is_super_admin?: boolean;
+  is_active?: boolean;
 }
 
 export interface AuditLogItem {

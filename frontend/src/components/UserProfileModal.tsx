@@ -9,6 +9,10 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { AuthUser } from "../types";
+import {
+  isSuperAdmin as checkSuperAdmin,
+  getUserPermissions,
+} from "../utils/auth";
 
 interface UserProfileModalProps {
   isOpen: boolean;
@@ -66,11 +70,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     }
   };
 
-  const permissions = user?.permissions ||
-    user?.scopes || ["run_match", "evaluate", "audit_logs", "endpoints_list"];
-  const userRole =
-    user?.role ||
-    (user?.is_superuser || user?.is_admin ? "Super Admin" : "Operator");
+  const isSuperAdmin = checkSuperAdmin(user);
+  const permissions = isSuperAdmin
+    ? ["run_match", "evaluate", "audit_logs", "endpoints_list"]
+    : getUserPermissions(user);
+  const userRole = isSuperAdmin ? "Super Admin" : user?.role || "User";
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
@@ -99,6 +103,22 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
         </div>
 
         <div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+          {/* Temporary password alert banner */}
+          {user?.must_change_password && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl flex items-start space-x-2.5 text-xs text-amber-900">
+              <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block">
+                  Password update required
+                </span>
+                <span>
+                  Your account is currently using a temporary password. Please
+                  set a new permanent password below.
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* User card info */}
           <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
             <div className="flex items-center justify-between">
@@ -111,14 +131,29 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     {user?.full_name ||
                       user?.name ||
                       user?.username ||
-                      "Authenticated Operator"}
+                      user?.email ||
+                      "Authenticated User"}
                   </h4>
                   <p className="text-xs text-slate-500">
                     {user?.email || user?.username || "user@system.local"}
                   </p>
+                  {user?.department && (
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Department:{" "}
+                      <span className="font-medium text-slate-700">
+                        {user.department}
+                      </span>
+                    </p>
+                  )}
                 </div>
               </div>
-              <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 border border-orange-200">
+              <span
+                className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${
+                  isSuperAdmin
+                    ? "bg-orange-100 text-orange-800 border-orange-200 font-bold"
+                    : "bg-slate-100 text-slate-800 border-slate-200"
+                }`}
+              >
                 {userRole}
               </span>
             </div>

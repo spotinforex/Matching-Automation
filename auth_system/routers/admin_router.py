@@ -106,3 +106,21 @@ def update_user(user_id: int, payload: UserUpdateRequest, request: Request):
     if updated is None:
         raise HTTPException(404, "No such user")
     return UserResponse(**updated)
+
+
+@router.delete("/users/{user_id}", status_code=204)
+def delete_user(user_id: int, request: Request, current_admin: dict = Depends(require_super_admin)):
+    database_url = get_database_url(request)
+
+    target = auth_repo.get_user_by_id(database_url, user_id)
+    if target is None:
+        raise HTTPException(404, "No such user")
+
+    if target["id"] == current_admin["id"]:
+        raise HTTPException(400, "You can't delete your own account.")
+
+    if target["is_super_admin"] and target["is_active"] and auth_repo.count_active_super_admins(database_url) <= 1:
+        raise HTTPException(400, "Can't delete the last active super admin.")
+
+    auth_repo.delete_user(database_url, user_id)
+    return None

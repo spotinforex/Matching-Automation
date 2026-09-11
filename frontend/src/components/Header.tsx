@@ -14,16 +14,17 @@ import {
   LogOut,
 } from "lucide-react";
 import { AuthUser } from "../types";
+import { canAccessEvaluate, canAccessAudit, isSuperAdmin } from "../utils/auth";
 
 interface HeaderProps {
   healthStatus: { ok: boolean; statusText: string } | null;
   isCheckingHealth: boolean;
   onCheckHealth?: () => void;
-  activeView: "pipeline" | "evaluation";
+  activeView: "pipeline" | "evaluation" | "admin";
   hasMatchResult: boolean;
   hasEvaluationReport?: boolean;
   warningCount?: number;
-  onSelectView: (view: "pipeline" | "evaluation") => void;
+  onSelectView: (view: "pipeline" | "evaluation" | "admin") => void;
   onToggleWarnings?: () => void;
   user: AuthUser | null;
   onOpenAuth: () => void;
@@ -48,6 +49,10 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAuditLogs,
   onLogout,
 }) => {
+  const hasEvaluateAccess = canAccessEvaluate(user);
+  const hasAuditAccess = canAccessAudit(user);
+  const hasAdminAccess = isSuperAdmin(user);
+
   return (
     <header className="bg-white/90 backdrop-blur-md border-b border-slate-200/80 text-slate-900 sticky top-0 z-30 shadow-xs">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2 sm:gap-4">
@@ -87,52 +92,76 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="hidden xs:inline">Matching</span> Pipeline
           </button>
 
-          {!hasMatchResult ? (
+          {/* Evaluate Navigation Tab - Strictly for assigned 'evaluate' role or Super Admin */}
+          {hasEvaluateAccess &&
+            (!hasMatchResult ? (
+              <button
+                type="button"
+                disabled
+                title="Run automated matching engine first to enable evaluation"
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-400 border border-slate-200/60 cursor-not-allowed opacity-70 ml-1"
+              >
+                <Scale className="w-3.5 h-3.5 text-slate-400" />
+                <span>Evaluate</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onSelectView("evaluation")}
+                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ml-1 ${
+                  activeView === "evaluation"
+                    ? "bg-orange-600 text-white shadow-2xs"
+                    : "bg-orange-50 text-orange-800 border border-orange-200/90 hover:bg-orange-100 shadow-2xs"
+                }`}
+              >
+                <Scale className="w-3.5 h-3.5 text-orange-600 activeView === 'evaluation' ? 'text-white' : ''" />
+                <span>Compare Matches</span>
+                {hasEvaluationReport ? (
+                  <span
+                    className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0"
+                    title="Report evaluated"
+                  />
+                ) : (
+                  <span className="flex h-2 w-2 relative flex-shrink-0">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
+                  </span>
+                )}
+              </button>
+            ))}
+
+          {/* Audit Logs button - Strictly for assigned 'audit_logs' role or Super Admin */}
+          {hasAuditAccess && (
             <button
               type="button"
-              disabled
-              title="Run automated matching engine first to enable evaluation"
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-400 border border-slate-200/60 cursor-not-allowed opacity-70 ml-1"
+              onClick={onOpenAuditLogs}
+              className="flex items-center space-x-1 px-2.5 py-1.5 ml-1 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 transition-colors cursor-pointer"
+              title="Inspect audit trail and registered endpoints"
             >
-              <Scale className="w-3.5 h-3.5 text-slate-400" />
-              <span>Evaluate</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => onSelectView("evaluation")}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ml-1 ${
-                activeView === "evaluation"
-                  ? "bg-orange-600 text-white shadow-2xs"
-                  : "bg-orange-50 text-orange-800 border border-orange-200/90 hover:bg-orange-100 shadow-2xs"
-              }`}
-            >
-              <Scale className="w-3.5 h-3.5 text-orange-600 activeView === 'evaluation' ? 'text-white' : ''" />
-              <span>Compare Matches</span>
-              {hasEvaluationReport ? (
-                <span
-                  className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0"
-                  title="Report evaluated"
-                />
-              ) : (
-                <span className="flex h-2 w-2 relative flex-shrink-0">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
-                </span>
-              )}
+              <Database className="w-3.5 h-3.5 text-slate-500" />
+              <span className="hidden md:inline">Audit Trail</span>
             </button>
           )}
 
-          {/* Audit Logs button */}
-          <button
-            type="button"
-            onClick={onOpenAuditLogs}
-            className="flex items-center space-x-1 px-2.5 py-1.5 ml-1 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 transition-colors"
-            title="Inspect audit trail and registered endpoints"
-          >
-            <Database className="w-3.5 h-3.5 text-slate-500" />
-            <span className="hidden md:inline">Audit Trail</span>
-          </button>
+          {/* Admin Route - STRICTLY FOR SUPER ADMIN ONLY */}
+          {hasAdminAccess && (
+            <button
+              type="button"
+              onClick={() => onSelectView("admin")}
+              className={`flex items-center space-x-1 px-2.5 py-1.5 ml-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                activeView === "admin"
+                  ? "bg-slate-900 text-white shadow-2xs"
+                  : "text-orange-800 bg-orange-50 hover:bg-orange-100 border border-orange-200"
+              }`}
+              title="Manage users and roles (/admin - Super Admin only)"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-orange-600" />
+              <span>Admin</span>
+              <span className="text-[9px] uppercase tracking-wider font-bold bg-orange-200/80 text-orange-900 px-1 rounded ml-0.5">
+                Super
+              </span>
+            </button>
+          )}
         </div>
 
         {/* Backend Host, Auth Status, Warnings Badge & Settings Action */}

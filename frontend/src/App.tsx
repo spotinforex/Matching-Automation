@@ -23,6 +23,7 @@ import { AuthModal } from "./components/AuthModal";
 import { UserProfileModal } from "./components/UserProfileModal";
 import { AuditLogsModal } from "./components/AuditLogsModal";
 import { LoginPage } from "./components/LoginPage";
+import { AdminSection } from "./components/AdminSection";
 
 import { apiService } from "./services/api";
 import {
@@ -34,6 +35,7 @@ import {
   AppWarning,
   AuthUser,
 } from "./types";
+import { canAccessEvaluate, canAccessAudit, isSuperAdmin } from "./utils/auth";
 import {
   AlertCircle,
   CheckCircle2,
@@ -81,10 +83,10 @@ export default function App() {
     null,
   );
 
-  // Evaluation comparison state
-  const [activeView, setActiveView] = useState<"pipeline" | "evaluation">(
-    "pipeline",
-  );
+  // Evaluation comparison & admin view state
+  const [activeView, setActiveView] = useState<
+    "pipeline" | "evaluation" | "admin"
+  >("pipeline");
   const [evaluationReport, setEvaluationReport] =
     useState<EvaluationReport | null>(null);
   const [storedManualFile, setStoredManualFile] = useState<File | null>(null);
@@ -198,6 +200,32 @@ export default function App() {
     }
   }, []);
 
+  const hasEvaluateAccess = canAccessEvaluate(currentUser);
+  const hasAuditAccess = canAccessAudit(currentUser);
+  const hasAdminAccess = isSuperAdmin(currentUser);
+
+  // Guard protected routes based on role permissions:
+  // - Admin route: Super Admin only
+  // - Evaluation route: Assigned 'evaluate' role or Super Admin only
+  useEffect(() => {
+    if (activeView === "admin" && !hasAdminAccess) {
+      setActiveView("pipeline");
+    } else if (activeView === "evaluation" && !hasEvaluateAccess) {
+      setActiveView("pipeline");
+    }
+  }, [activeView, hasAdminAccess, hasEvaluateAccess]);
+
+  // Prompt password update if must_change_password is true
+  useEffect(() => {
+    if (currentUser?.must_change_password) {
+      setIsProfileModalOpen(true);
+      showNotification(
+        "error",
+        "Temporary password in use. Please change your password to secure your account.",
+      );
+    }
+  }, [currentUser?.must_change_password]);
+
   // Authentication Handlers
   const handleLogin = async (username: string, pass: string) => {
     const res = await apiService.login(username, pass);
@@ -210,11 +238,15 @@ export default function App() {
   const handleLogout = async () => {
     await apiService.logout();
     setCurrentUser(null);
+    setActiveView("pipeline");
     showNotification("success", "You have been signed out.");
   };
 
   const handleChangePassword = async (oldPass: string, newPass: string) => {
     await apiService.changePassword(oldPass, newPass);
+    if (currentUser) {
+      setCurrentUser({ ...currentUser, must_change_password: false });
+    }
   };
 
   const handleAuthErrorCheck = (err: any) => {
@@ -611,7 +643,32 @@ export default function App() {
           />
         </div>
 
-        {activeView === "pipeline" ? (
+        {/* Temporary password alert banner */}
+        {currentUser?.must_change_password && (
+          <div className="p-4 bg-amber-50 border border-amber-300 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs text-amber-900">
+            <div className="flex items-center space-x-3">
+              <Lock className="w-5 h-5 text-amber-600 flex-shrink-0" />
+              <div>
+                <span className="text-xs font-bold block">
+                  Action Required: Temporary Password Detected
+                </span>
+                <span className="text-xs text-amber-800">
+                  Your account was provisioned with a temporary password. You
+                  must update your password to secure your account.
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsProfileModalOpen(true)}
+              className="px-3.5 py-2 bg-amber-800 hover:bg-amber-900 text-white rounded-lg text-xs font-semibold shadow-xs flex-shrink-0 transition-colors"
+            >
+              Update Password Now
+            </button>
+          </div>
+        )}
+
+        {activeView === "pipeline" && (
           <>
             {/* Upload & Configuration Section */}
             <FileUploadSection
@@ -686,8 +743,8 @@ export default function App() {
               </section>
             )}
 
-            {/* Compare Evaluation Banner trigger if match completed */}
-            {matchResponse && (
+            {/* Compare Evaluation Banner trigger if match completed and user has evaluate permission */}
+            {matchResponse && hasEvaluateAccess && (
               <div className="p-4 bg-orange-50/80 border border-orange-200/90 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-2xs">
                 <div className="flex items-center space-x-3">
                   <div className="p-2.5 bg-orange-100 text-orange-700 rounded-lg">
@@ -706,21 +763,23 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setActiveView("evaluation")}
-                  className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold rounded-lg shadow-2xs flex items-center space-x-1.5 flex-shrink-0 transition-colors"
+                  className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold rounded-lg shadow-2xs flex items-center space-x-1.5 flex-shrink-0 transition-colors cursor-pointer"
                 >
                   <span>Open Evaluation View →</span>
                 </button>
               </div>
             )}
           </>
-        ) : (
-          /* Evaluation View Page */
+        )}
+
+        {activeView === "evaluation" && hasEvaluateAccess && (
+          /* Evaluation View Page - Strictly for assigned 'evaluate' role or Super Admin */
           <div className="space-y-6">
             <div className="flex items-center justify-between border-b border-slate-200/80 pb-4">
               <button
                 type="button"
                 onClick={() => setActiveView("pipeline")}
-                className="flex items-center space-x-2 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-200 px-3.5 py-2 rounded-lg shadow-2xs transition-colors"
+                className="flex items-center space-x-2 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-200 px-3.5 py-2 rounded-lg shadow-2xs transition-colors cursor-pointer"
               >
                 <ArrowLeft className="w-4 h-4 text-slate-500" />
                 <span>Back to Matching Pipeline</span>
@@ -742,6 +801,30 @@ export default function App() {
               onCompare={handleCompareEvaluation}
               onExportEval={handleExportEvaluation}
             />
+          </div>
+        )}
+
+        {activeView === "admin" && hasAdminAccess && (
+          /* Super Admin View Page - Strictly Super Admin Only */
+          <div className="space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-200/80 pb-4">
+              <button
+                type="button"
+                onClick={() => setActiveView("pipeline")}
+                className="flex items-center space-x-2 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-200 px-3.5 py-2 rounded-lg shadow-2xs transition-colors cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4 text-slate-500" />
+                <span>Back to Matching Pipeline</span>
+              </button>
+              <div className="text-xs text-slate-500 font-medium">
+                Active View:{" "}
+                <span className="text-slate-900 font-bold">
+                  Super Admin Management (/admin)
+                </span>
+              </div>
+            </div>
+
+            <AdminSection currentUser={currentUser} />
           </div>
         )}
       </main>
@@ -795,16 +878,18 @@ export default function App() {
         onChangePassword={handleChangePassword}
       />
 
-      {/* Audit Logs & Endpoints Catalog Modal */}
-      <AuditLogsModal
-        isOpen={isAuditModalOpen}
-        onClose={() => setIsAuditModalOpen(false)}
-        isAuthenticated={!!currentUser || apiService.isAuthenticated()}
-        onOpenAuth={() => {
-          setIsAuditModalOpen(false);
-          setIsAuthModalOpen(true);
-        }}
-      />
+      {/* Audit Logs & Endpoints Catalog Modal - Strictly for assigned 'audit_logs' role or Super Admin */}
+      {hasAuditAccess && (
+        <AuditLogsModal
+          isOpen={isAuditModalOpen}
+          onClose={() => setIsAuditModalOpen(false)}
+          isAuthenticated={!!currentUser || apiService.isAuthenticated()}
+          onOpenAuth={() => {
+            setIsAuditModalOpen(false);
+            setIsAuthModalOpen(true);
+          }}
+        />
+      )}
     </div>
   );
 }
