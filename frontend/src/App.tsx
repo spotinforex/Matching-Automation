@@ -24,10 +24,12 @@ import { UserProfileModal } from "./components/UserProfileModal";
 import { AuditLogsModal } from "./components/AuditLogsModal";
 import { LoginPage } from "./components/LoginPage";
 import { AdminSection } from "./components/AdminSection";
+import { MatchRunsHistoryModal } from "./components/MatchRunsHistoryModal";
 
 import { apiService } from "./services/api";
 import {
   MatchRunResponse,
+  MatchRunDetail,
   MatchResult,
   WaitlistEntry,
   PipelineStep,
@@ -35,7 +37,12 @@ import {
   AppWarning,
   AuthUser,
 } from "./types";
-import { canAccessEvaluate, canAccessAudit, isSuperAdmin } from "./utils/auth";
+import {
+  canAccessEvaluate,
+  canAccessAudit,
+  canAccessRunMatch,
+  isSuperAdmin,
+} from "./utils/auth";
 import {
   AlertCircle,
   CheckCircle2,
@@ -45,6 +52,8 @@ import {
   Lock,
   LogIn,
   RefreshCw,
+  History,
+  Download,
 } from "lucide-react";
 
 export default function App() {
@@ -64,6 +73,11 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState<boolean>(false);
+  const [isMatchRunsModalOpen, setIsMatchRunsModalOpen] =
+    useState<boolean>(false);
+  const [loadedPastRun, setLoadedPastRun] = useState<MatchRunDetail | null>(
+    null,
+  );
 
   // Upload & Match state
   const [ypLoadedCount, setYpLoadedCount] = useState<number | null>(null);
@@ -202,6 +216,7 @@ export default function App() {
 
   const hasEvaluateAccess = canAccessEvaluate(currentUser);
   const hasAuditAccess = canAccessAudit(currentUser);
+  const hasRunMatchAccess = canAccessRunMatch(currentUser);
   const hasAdminAccess = isSuperAdmin(currentUser);
 
   // Guard protected routes based on role permissions:
@@ -438,6 +453,7 @@ export default function App() {
       ]);
 
       setMatchResponse(res);
+      setLoadedPastRun(null);
 
       const matchWarns = extractMatchWarnings(res);
       if (matchWarns.length > 0) {
@@ -461,22 +477,100 @@ export default function App() {
     }
   };
 
-  // Handle Export results from backend API (/match/export)
+  // Handle selecting a historical past match run (GET /match/runs/:id)
+  const handleSelectPastRun = (runDetail: MatchRunDetail) => {
+    setLoadedPastRun(runDetail);
+    setMatchResponse({
+      matches: runDetail.matches || [],
+      waitlist: runDetail.waitlist || [],
+      matched_count:
+        runDetail.matched_count ?? (runDetail.matches?.length || 0),
+      waitlisted_count:
+        runDetail.waitlisted_count ?? (runDetail.waitlist?.length || 0),
+      warnings: runDetail.warnings,
+      warning: runDetail.warning,
+      id: runDetail.id,
+      run_id: runDetail.id,
+    });
+    if (runDetail.hop_limit != null) setHopLimit(runDetail.hop_limit);
+    if (runDetail.match_cap !== undefined && runDetail.match_cap !== null)
+      setMatchCap(runDetail.match_cap);
+    if (runDetail.shortlist_size != null)
+      setShortlistSize(runDetail.shortlist_size);
+    if (runDetail.total_yps) {
+      setYpLoadedCount(runDetail.total_yps);
+    } else {
+      setYpLoadedCount(
+        (runDetail.matched_count || 0) + (runDetail.waitlisted_count || 0),
+      );
+    }
+    const runTime = runDetail.created_at
+      ? new Date(runDetail.created_at).toLocaleTimeString()
+      : "Saved";
+    setPipelineSteps([
+      {
+        id: "1",
+        title: "1. Excel Ingestion",
+        description: "Parse & validate YP / MCP sources",
+        status: "completed",
+        timestamp: runTime,
+      },
+      {
+        id: "2",
+        title: "2. Landmark Geocoding",
+        description: "Geocode centroid coordinates",
+        status: "completed",
+        timestamp: runTime,
+      },
+      {
+        id: "3",
+        title: "3. Distance Matrix",
+        description: "Compute Haversine / Maps travel times",
+        status: "completed",
+        timestamp: runTime,
+      },
+      {
+        id: "4",
+        title: "4. Multi-Round Match",
+        description: "Hop limit algorithm execution",
+        status: "completed",
+        timestamp: runTime,
+      },
+      {
+        id: "5",
+        title: "5. Capacity Allocation",
+        description: "Assign centers & waitlist cutoff",
+        status: "completed",
+        timestamp: runTime,
+      },
+    ]);
+    setActiveView("pipeline");
+    showNotification(
+      "success",
+      `Loaded historical Match Run #${runDetail.id} into active dashboard`,
+    );
+  };
+
+  // Handle Export results from backend API (/match/export or /match/runs/:id/export)
   const handleExportApi = async () => {
     setIsExporting(true);
     try {
-      const blob = await apiService.exportResults();
+      const blob = await apiService.exportResults(loadedPastRun?.id);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `match_results_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.download = loadedPastRun?.id
+        ? `match_run_${loadedPastRun.id}_${new Date().toISOString().slice(0, 10)}.xlsx`
+        : `match_results_${new Date().toISOString().slice(0, 10)}.xlsx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
       showNotification(
         "success",
-        "Match results downloaded from API successfully",
+        loadedPastRun?.id
+          ? `Match run #${loadedPastRun.id} downloaded from database successfully`
+          : "Match results downloaded from API successfully",
       );
     } catch (err: any) {
       showNotification("error", err.message || "Export API request failed");
@@ -601,6 +695,7 @@ export default function App() {
         onOpenAuth={() => setIsAuthModalOpen(true)}
         onOpenProfile={() => setIsProfileModalOpen(true)}
         onOpenAuditLogs={() => setIsAuditModalOpen(true)}
+        onOpenMatchRuns={() => setIsMatchRunsModalOpen(true)}
         onLogout={handleLogout}
       />
 
@@ -668,6 +763,81 @@ export default function App() {
           </div>
         )}
 
+        {/* Historical Past Match Run Active Banner */}
+        {loadedPastRun && (
+          <div className="p-4 bg-orange-50/90 border border-orange-300 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs animate-in fade-in duration-200">
+            <div className="flex items-center space-x-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-700 flex items-center justify-center flex-shrink-0 shadow-2xs">
+                <History className="w-5 h-5 text-orange-600" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center space-x-2 flex-wrap">
+                  <span className="text-xs font-bold text-slate-900">
+                    Viewing Historical Match Run #{loadedPastRun.id}
+                  </span>
+                  <span className="text-[10px] font-mono bg-orange-200/80 text-orange-950 font-bold px-2 py-0.5 rounded-full">
+                    Database Record
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 mt-0.5 truncate">
+                  Executed on{" "}
+                  {loadedPastRun.created_at
+                    ? new Date(loadedPastRun.created_at).toLocaleString()
+                    : "N/A"}
+                  {(loadedPastRun.actor_name ||
+                    loadedPastRun.user_name ||
+                    loadedPastRun.actor_email) && (
+                    <span>
+                      {" "}
+                      by{" "}
+                      <strong className="text-slate-800">
+                        {loadedPastRun.actor_name ||
+                          loadedPastRun.user_name ||
+                          loadedPastRun.actor_email}
+                      </strong>
+                    </span>
+                  )}
+                  {" • "}
+                  {loadedPastRun.matched_count} matched,{" "}
+                  {loadedPastRun.waitlisted_count} waitlisted.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-2 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsMatchRunsModalOpen(true)}
+                className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg shadow-2xs flex items-center space-x-1.5 transition-colors cursor-pointer"
+              >
+                <History className="w-3.5 h-3.5 text-orange-600" />
+                <span>Browse Runs</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleExportApi}
+                disabled={isExporting}
+                className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg shadow-2xs flex items-center space-x-1.5 transition-colors cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-600" />
+                <span>Export Run (.xlsx)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoadedPastRun(null);
+                  showNotification(
+                    "success",
+                    "Returned to active matching workspace",
+                  );
+                }}
+                className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors cursor-pointer"
+              >
+                Clear Historical View
+              </button>
+            </div>
+          </div>
+        )}
+
         {activeView === "pipeline" && (
           <>
             {/* Upload & Configuration Section */}
@@ -688,6 +858,7 @@ export default function App() {
               onUploadYP={handleUploadYP}
               onUploadMCP={handleUploadMCP}
               onRunMatch={handleRunMatch}
+              onOpenMatchRuns={() => setIsMatchRunsModalOpen(true)}
             />
 
             {/* Pipeline Progress Monitor */}
@@ -888,6 +1059,17 @@ export default function App() {
             setIsAuditModalOpen(false);
             setIsAuthModalOpen(true);
           }}
+        />
+      )}
+
+      {/* Match Runs History Modal - Strictly for assigned 'run_match' role or Super Admin */}
+      {hasRunMatchAccess && (
+        <MatchRunsHistoryModal
+          isOpen={isMatchRunsModalOpen}
+          onClose={() => setIsMatchRunsModalOpen(false)}
+          currentUser={currentUser}
+          onSelectRun={handleSelectPastRun}
+          currentLoadedRunId={loadedPastRun?.id}
         />
       )}
     </div>

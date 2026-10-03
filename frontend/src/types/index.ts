@@ -32,6 +32,52 @@ export interface MatchRunResponse {
   warning?: string;
   landmark_overlap_warning?: string;
   landmark_overlap?: number;
+  id?: number | string;
+  run_id?: number | string;
+  [key: string]: any;
+}
+
+export interface MatchRunSummary {
+  id: number | string;
+  created_at: string;
+  user_id?: number | null;
+  user_email?: string | null;
+  user_name?: string | null;
+  actor_id?: number | null;
+  actor_email?: string | null;
+  actor_name?: string | null;
+  hop_limit?: number | null;
+  match_cap?: number | null;
+  shortlist_size?: number | null;
+  matched_count: number;
+  waitlisted_count: number;
+  total_yps?: number | null;
+  total_mcps?: number | null;
+  execution_time_seconds?: number | null;
+  metadata?: Record<string, any>;
+  [key: string]: any;
+}
+
+export interface MatchRunDetail {
+  id: number | string;
+  created_at?: string;
+  user_id?: number | null;
+  user_email?: string | null;
+  user_name?: string | null;
+  actor_id?: number | null;
+  actor_email?: string | null;
+  actor_name?: string | null;
+  hop_limit?: number | null;
+  match_cap?: number | null;
+  shortlist_size?: number | null;
+  matches: MatchResult[];
+  waitlist: WaitlistEntry[];
+  matched_count: number;
+  waitlisted_count: number;
+  warnings?: string[] | string;
+  warning?: string;
+  landmark_overlap?: number;
+  landmark_overlap_warning?: string;
   [key: string]: any;
 }
 

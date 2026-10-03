@@ -8,6 +8,9 @@ Endpoints:
     POST /upload/mcp         - upload the MCP source .xlsx, parses & stores in memory
     POST /match/run          - runs geocoding + matching end-to-end, returns results   [run_match]
     GET  /match/export       - download the last match run as a formatted .xlsx        [run_match]
+    GET  /match/runs         - list past match runs (summaries only)                   [run_match]
+    GET  /match/runs/{id}    - view one past match run in full                         [run_match]
+    GET  /match/runs/{id}/export - redownload a past match run as .xlsx                [run_match]
     POST /evaluation/compare - compares the last match run against a manual sheet       [evaluate]
     GET  /evaluation/export  - download the last evaluation as a formatted .xlsx        [evaluate]
     GET  /audit/logs         - list audit events                                        [audit_logs]
@@ -27,7 +30,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, UploadFile, File, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, UploadFile, File, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
@@ -41,6 +44,13 @@ from logic.landmark import build_landmark_order
 from logic.matcher import Matcher
 from configs.schemas import MatchRunResponse, MatchResult, WaitlistEntry
 from utils.audit_log import ensure_audit_log_table, get_audit_logs, log_action
+from utils.match_run_store import (
+    ensure_match_runs_table,
+    save_match_run,
+    list_match_runs,
+    get_match_run,
+)
+from utils.match_run_export import build_match_run_workbook
 from dotenv import load_dotenv
 import logging
 
@@ -90,10 +100,17 @@ _google_api_key = os.environ.get("GOOGLE_API_KEY")
 _database_url = os.environ.get("DATABASE_URL") or os.environ.get("SUPABASE_DB_URL")
 if not _database_url:
     raise RuntimeError(
-        "DATABASE_URL (or SUPABASE_DB_URL) is required — auth, audit logs, and the "
-        "distance cache all depend on it now."
+        "DATABASE_URL (or SUPABASE_DB_URL) is required — auth, audit logs, the "
+        "distance cache, and match run history all depend on it now."
     )
 ensure_audit_log_table(_database_url)
+try:
+    ensure_match_runs_table(_database_url)
+except RuntimeError as e:
+    # Fail fast and clearly at startup rather than let every later call to
+    # save/list/get a match run blow up with a confusing "relation
+    # match_runs does not exist" deep in a request.
+    raise RuntimeError(f"Startup failed: {e}") from e
 
 # --- make DATABASE_URL discoverable to auth dependencies via app.state ---
 app.state.database_url = _database_url
@@ -117,6 +134,13 @@ else:
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# --- Matches auth_system.dependencies.require_super_admin: user records
+# carry a boolean is_super_admin flag. A super admin sees every user's
+# match runs; everyone else sees only their own. ---
+def _is_super_admin(current_user: dict) -> bool:
+    return bool(current_user.get("is_super_admin"))
 
 
 # --- endpoints_list scope — lists every registered route ---
@@ -223,10 +247,20 @@ async def upload_mcp(
     return {"loaded": len(mcps)}
 
 
-# --- run_match scope required; actor captured for audit log ---
+# --- run_match scope required; actor captured for audit log.
+# Every run is now also persisted to the match_runs table (see
+# utils/match_run_store.py) so it can be listed/reopened later via
+# GET /match/runs and GET /match/runs/{id} — independent of in-memory
+# `state`, which only ever holds the most recent run and is lost on
+# restart. The new row's id is returned in the X-Match-Run-Id response
+# header; it isn't added to the MatchRunResponse body itself, since that
+# model is shared with other callers and changing its shape belongs in
+# configs/schemas.py as a deliberate edit (add `run_id: int | None = None`
+# there if you want it in the JSON body too).
 @app.post("/match/run", response_model=MatchRunResponse)
 def run_match(
     request: Request,
+    response: Response,
     HOP_LIMIT: int = 3,
     MATCH_CAP: int | None = None,
     SHORTLIST_SIZE: int = 10,
@@ -249,12 +283,34 @@ def run_match(
     matches = [MatchResult(**m) for m in result["matches"]]
     waitlist = [WaitlistEntry(**w) for w in result["waitlist"]]
 
-    response = MatchRunResponse(
+    match_response = MatchRunResponse(
         matches=matches, waitlist=waitlist,
         matched_count=len(matches), waitlisted_count=len(waitlist),
     )
-    state["last_result"] = response
+    state["last_result"] = match_response
     state["last_evaluation"] = None
+
+    # The matching itself already succeeded at this point — don't throw that
+    # work away just because persisting it hit a DB error. Log it, leave the
+    # X-Match-Run-Id header off, and still return the match result.
+    run_id = None
+    try:
+        run_id = save_match_run(
+            _database_url,
+            actor_id=current_user["id"],
+            actor_email=current_user["email"],
+            actor_name=current_user.get("full_name"),
+            hop_limit=HOP_LIMIT,
+            match_cap=MATCH_CAP,
+            shortlist_size=SHORTLIST_SIZE,
+            matches=result["matches"],
+            waitlist=result["waitlist"],
+            dropped_mcps=result["dropped_mcps"],
+        )
+        response.headers["X-Match-Run-Id"] = str(run_id)
+    except RuntimeError:
+        logger.exception("run_match() matched successfully but could not save the run to history")
+
     log_action(
         _database_url, action="run_match", endpoint="POST /match/run",
         actor_ip=request.client.host if request.client else None,
@@ -264,9 +320,10 @@ def run_match(
         metadata={
             "hop_limit": HOP_LIMIT, "match_cap": MATCH_CAP, "shortlist_size": SHORTLIST_SIZE,
             "matched_count": len(matches), "waitlisted_count": len(waitlist),
+            "match_run_id": run_id,
         },
     )
-    return response
+    return match_response
 
 
 # --- run_match scope required (exporting a match run); actor captured ---
@@ -285,6 +342,96 @@ def export_results(request: Request, current_user: dict = Depends(require_permis
         actor_id=current_user["id"], actor_email=current_user["email"],
         actor_name=current_user.get("full_name"),
         metadata={"filename": filename},
+    )
+    return FileResponse(
+        path=output_path, filename=filename,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        background=BackgroundTask(shutil.rmtree, tmp_dir, ignore_errors=True),
+    )
+
+
+# --- run_match scope required; lists past runs (summaries only — no
+# matches/waitlist/dropped_mcps payload, to keep this cheap). Reuses the
+# run_match scope rather than introducing a new permission, on the
+# assumption that whoever can trigger a match run can also see run history;
+# split this into its own scope (e.g. "match_runs_list") if that's too broad
+# for your permission model.
+#
+# A super admin sees every user's runs; everyone else sees only their own
+# (actor_id filter applied in list_match_runs(), not here, so there's one
+# place deciding what "my runs" means). ---
+@app.get("/match/runs")
+def list_runs(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    current_user: dict = Depends(require_permission("run_match")),
+):
+    actor_filter = None if _is_super_admin(current_user) else current_user["id"]
+    try:
+        items, total = list_match_runs(_database_url, limit=limit, offset=offset, actor_id=actor_filter)
+    except RuntimeError as error:
+        raise HTTPException(503, str(error)) from error
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+
+# --- run_match scope required; full record for one past run, including
+# matches/waitlist/dropped_mcps.
+#
+# A super admin can open any run id; everyone else can only open a run they
+# own — a run that exists but belongs to someone else returns the same 404
+# as a run that doesn't exist at all, so this endpoint never confirms other
+# users' run ids are valid. ---
+@app.get("/match/runs/{run_id}")
+def get_run(
+    run_id: int,
+    current_user: dict = Depends(require_permission("run_match")),
+):
+    actor_filter = None if _is_super_admin(current_user) else current_user["id"]
+    try:
+        run = get_match_run(_database_url, run_id, actor_id=actor_filter)
+    except RuntimeError as error:
+        raise HTTPException(503, str(error)) from error
+    if run is None:
+        raise HTTPException(404, f"No match run found with id={run_id}")
+    return run
+
+
+# --- run_match scope required; redownloads a past run as .xlsx. Same
+# ownership rule as GET /match/runs/{run_id}: super admin can export any
+# run, everyone else only their own (same run-vs-nonexistent 404 either
+# way). Built from the stored matches/waitlist/dropped_mcps only — IDs, not
+# full YP/MCP names/addresses, since those aren't persisted (see
+# utils/match_run_export.py for why). ---
+@app.get("/match/runs/{run_id}/export")
+def export_run(
+    request: Request,
+    run_id: int,
+    current_user: dict = Depends(require_permission("run_match")),
+):
+    actor_filter = None if _is_super_admin(current_user) else current_user["id"]
+    try:
+        run = get_match_run(_database_url, run_id, actor_id=actor_filter)
+    except RuntimeError as error:
+        raise HTTPException(503, str(error)) from error
+    if run is None:
+        raise HTTPException(404, f"No match run found with id={run_id}")
+
+    tmp_dir = tempfile.mkdtemp()
+    filename = f"match_run_{run_id}_{run['created_at'].strftime('%Y%m%d_%H%M%S')}.xlsx"
+    output_path = str(Path(tmp_dir) / filename)
+    try:
+        build_match_run_workbook(run, output_path)
+    except RuntimeError as error:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise HTTPException(500, str(error)) from error
+
+    log_action(
+        _database_url, action="export_match_run", endpoint="GET /match/runs/{run_id}/export",
+        actor_ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        actor_id=current_user["id"], actor_email=current_user["email"],
+        actor_name=current_user.get("full_name"),
+        metadata={"match_run_id": run_id, "filename": filename},
     )
     return FileResponse(
         path=output_path, filename=filename,

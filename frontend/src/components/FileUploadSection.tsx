@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ChevronUp,
   ShieldCheck,
+  History,
 } from "lucide-react";
 
 interface FileUploadSectionProps {
@@ -31,6 +32,7 @@ interface FileUploadSectionProps {
   onUploadYP: (file: File) => void;
   onUploadMCP: (file: File) => void;
   onRunMatch: () => void;
+  onOpenMatchRuns?: () => void;
 }
 
 export const FileUploadSection: React.FC<FileUploadSectionProps> = ({
@@ -50,6 +52,7 @@ export const FileUploadSection: React.FC<FileUploadSectionProps> = ({
   onUploadYP,
   onUploadMCP,
   onRunMatch,
+  onOpenMatchRuns,
 }) => {
   const ypInputRef = useRef<HTMLInputElement>(null);
   const mcpInputRef = useRef<HTMLInputElement>(null);
@@ -183,7 +186,7 @@ export const FileUploadSection: React.FC<FileUploadSectionProps> = ({
                   MCP Source Excel Data
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Master Crafts Persons Records (.xlsx)
+                  Master Center Points (.xlsx)
                 </p>
               </div>
             </div>
@@ -602,11 +605,24 @@ export const FileUploadSection: React.FC<FileUploadSectionProps> = ({
         </div>
 
         {/* Action Button Footer */}
-        <div className="flex items-center justify-end pt-2 border-t border-slate-100">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-slate-100">
+          <div>
+            {onOpenMatchRuns && (
+              <button
+                type="button"
+                onClick={onOpenMatchRuns}
+                className="w-full sm:w-auto flex items-center justify-center space-x-1.5 px-4 py-2 rounded-lg font-semibold text-xs text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 transition-colors cursor-pointer shadow-2xs"
+                title="View previous match runs and download past workbooks (GET /match/runs)"
+              >
+                <History className="w-3.5 h-3.5 text-orange-600" />
+                <span>View Past Match Runs</span>
+              </button>
+            )}
+          </div>
           <button
             onClick={onRunMatch}
             disabled={isMatching || !canRunMatch}
-            className={`w-full md:w-auto flex items-center justify-center space-x-2 px-8 py-2.5 rounded-lg font-semibold text-xs transition-all shadow-xs ${
+            className={`w-full sm:w-auto flex items-center justify-center space-x-2 px-8 py-2.5 rounded-lg font-semibold text-xs transition-all shadow-xs ${
               isMatching
                 ? "bg-orange-500 text-white cursor-wait opacity-90"
                 : canRunMatch

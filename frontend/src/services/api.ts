@@ -1,6 +1,8 @@
 import {
   HealthResponse,
   MatchRunResponse,
+  MatchRunSummary,
+  MatchRunDetail,
   UploadResponse,
   EvaluationReport,
   AuthUser,
@@ -147,23 +149,58 @@ export class ApiService {
 
   // --- Auth API Endpoints ---
   public async login(email: string, password: string): Promise<{ token: string; user?: AuthUser }> {
-    const response = await fetch(`${this.baseUrl}/auth/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: JSON.stringify({ email, password }),
-      credentials: 'include',
-    });
+    let token = '';
+    let user: AuthUser | undefined;
 
-    if (!response.ok) {
-      throw await this.parseResponseError(response, 'Login failed');
+    const trimmedEmail = email.trim();
+
+    try {
+      const response = await fetch(`${this.baseUrl}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          email: trimmedEmail,
+          password: password,
+        }),
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        const data: LoginResponse = await response.json();
+        token = data.access_token || data.token || '';
+        user = data.user;
+      } else if (response.status === 422 || response.status === 400) {
+        // Fallback to form-urlencoded if endpoint requires form data
+        const formParams = new URLSearchParams();
+        formParams.append('email', trimmedEmail);
+        formParams.append('password', password);
+
+        const formResp = await fetch(`${this.baseUrl}/auth/login`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': 'application/json',
+          },
+          body: formParams.toString(),
+          credentials: 'include',
+        });
+
+        if (formResp.ok) {
+          const formData: LoginResponse = await formResp.json();
+          token = formData.access_token || formData.token || '';
+          user = formData.user;
+        } else {
+          throw await this.parseResponseError(response, 'Login failed');
+        }
+      } else {
+        throw await this.parseResponseError(response, 'Login failed');
+      }
+    } catch (err: any) {
+      throw err;
     }
-
-    const data: LoginResponse = await response.json();
-    const token = data.access_token || data.token || '';
-    let user = data.user;
 
     if (!token) {
       throw new Error('Authentication succeeded but no access token was returned by the server.');
@@ -176,9 +213,9 @@ export class ApiService {
       try {
         user = await this.getMe();
       } catch {
-        // Fallback user record based on the email used to sign in
+        // Fallback user record based on email input
         user = {
-          email,
+          email: trimmedEmail,
         };
       }
     }
@@ -437,8 +474,52 @@ export class ApiService {
     return await response.json();
   }
 
-  public async exportResults(): Promise<Blob> {
-    const response = await this.fetchWithAuth(`${this.baseUrl}/match/export`, {
+  // --- Past Match Runs History Endpoints (requires run_match permission) ---
+  public async getMatchRuns(): Promise<MatchRunSummary[]> {
+    const response = await this.fetchWithAuth(`${this.baseUrl}/match/runs`, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+    });
+
+    if (!response.ok) {
+      throw await this.parseResponseError(response, 'Failed to fetch match runs history');
+    }
+
+    const data = await response.json();
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.items)) return data.items;
+    if (Array.isArray(data?.runs)) return data.runs;
+    return [];
+  }
+
+  public async getMatchRun(runId: number | string): Promise<MatchRunDetail> {
+    const response = await this.fetchWithAuth(`${this.baseUrl}/match/runs/${runId}`, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+    });
+
+    if (!response.ok) {
+      throw await this.parseResponseError(response, `Failed to retrieve match run #${runId}`);
+    }
+
+    return await response.json();
+  }
+
+  public async exportMatchRun(runId: number | string): Promise<Blob> {
+    const response = await this.fetchWithAuth(`${this.baseUrl}/match/runs/${runId}/export`, {
+      method: 'GET',
+    });
+
+    if (!response.ok) {
+      throw await this.parseResponseError(response, `Failed to export match run #${runId}`);
+    }
+
+    return await response.blob();
+  }
+
+  public async exportResults(runId?: number | string | null): Promise<Blob> {
+    const endpoint = runId != null ? `${this.baseUrl}/match/runs/${runId}/export` : `${this.baseUrl}/match/export`;
+    const response = await this.fetchWithAuth(endpoint, {
       method: 'GET',
     });
 

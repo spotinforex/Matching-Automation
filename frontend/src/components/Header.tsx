@@ -12,9 +12,15 @@ import {
   Database,
   ShieldCheck,
   LogOut,
+  History,
 } from "lucide-react";
 import { AuthUser } from "../types";
-import { canAccessEvaluate, canAccessAudit, isSuperAdmin } from "../utils/auth";
+import {
+  canAccessEvaluate,
+  canAccessAudit,
+  canAccessRunMatch,
+  isSuperAdmin,
+} from "../utils/auth";
 
 interface HeaderProps {
   healthStatus: { ok: boolean; statusText: string } | null;
@@ -30,6 +36,7 @@ interface HeaderProps {
   onOpenAuth: () => void;
   onOpenProfile: () => void;
   onOpenAuditLogs: () => void;
+  onOpenMatchRuns?: () => void;
   onLogout?: () => void;
 }
 
@@ -47,10 +54,12 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAuth,
   onOpenProfile,
   onOpenAuditLogs,
+  onOpenMatchRuns,
   onLogout,
 }) => {
   const hasEvaluateAccess = canAccessEvaluate(user);
   const hasAuditAccess = canAccessAudit(user);
+  const hasRunMatchAccess = canAccessRunMatch(user);
   const hasAdminAccess = isSuperAdmin(user);
 
   return (
@@ -91,6 +100,19 @@ export const Header: React.FC<HeaderProps> = ({
             <Cpu className="w-3.5 h-3.5" />
             <span className="hidden xs:inline">Matching</span> Pipeline
           </button>
+
+          {/* Past Match Runs History (requires run_match or Super Admin) */}
+          {hasRunMatchAccess && onOpenMatchRuns && (
+            <button
+              type="button"
+              onClick={onOpenMatchRuns}
+              className="flex items-center space-x-1.5 px-2.5 py-1.5 ml-1 rounded-lg text-xs font-semibold text-slate-700 hover:text-slate-900 hover:bg-slate-200/60 transition-colors cursor-pointer"
+              title="View past match runs and redownload results (GET /match/runs)"
+            >
+              <History className="w-3.5 h-3.5 text-orange-600" />
+              <span className="hidden sm:inline">Past Runs</span>
+            </button>
+          )}
 
           {/* Evaluate Navigation Tab - Strictly for assigned 'evaluate' role or Super Admin */}
           {hasEvaluateAccess &&
