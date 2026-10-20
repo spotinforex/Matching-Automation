@@ -16,7 +16,7 @@ import {
   AdminUserUpdateRequest,
 } from '../types';
 
-export const DEFAULT_BACKEND_URL = 'https://yp-to-mcp-matching-automation-195927873682.europe-west1.run.app';
+export const DEFAULT_BACKEND_URL = 'https://ffp-matching-app-git-866044218217.europe-west1.run.app';
 const TOKEN_STORAGE_KEY = 'mcp_auth_token';
 
 export class ApiService {
