@@ -93,6 +93,8 @@ export default function App() {
   const [hopLimit, setHopLimit] = useState<number>(10);
   const [matchCap, setMatchCap] = useState<number | null>(null);
   const [shortlistSize, setShortlistSize] = useState<number>(10);
+  const [selectedState, setSelectedState] = useState<string>("");
+  const [cityHint, setCityHint] = useState<string>("");
   const [matchResponse, setMatchResponse] = useState<MatchRunResponse | null>(
     null,
   );
@@ -362,6 +364,12 @@ export default function App() {
   const handleRunMatch = async () => {
     setIsMatching(true);
 
+    const stateScopeDisplay = selectedState
+      ? selectedState.toLowerCase() === "any"
+        ? "Nationwide / Open"
+        : `${selectedState} State`
+      : "Abia State (Default)";
+
     // Reset pipeline steps
     setPipelineSteps([
       {
@@ -373,7 +381,7 @@ export default function App() {
       {
         id: "2",
         title: "2. Landmark Geocoding",
-        description: "Geocode centroid coordinates",
+        description: `Geocode centroid coordinates (${stateScopeDisplay})`,
         status: "idle",
       },
       {
@@ -434,7 +442,13 @@ export default function App() {
         prev[4],
       ]);
 
-      const res = await apiService.runMatch(hopLimit, matchCap, shortlistSize);
+      const res = await apiService.runMatch(
+        hopLimit,
+        matchCap,
+        shortlistSize,
+        selectedState || null,
+        cityHint || null,
+      );
 
       setPipelineSteps((prev) => [
         prev[0],
@@ -452,7 +466,11 @@ export default function App() {
         },
       ]);
 
-      setMatchResponse(res);
+      setMatchResponse({
+        ...res,
+        state: res.state || selectedState || "Abia (Default)",
+        city: res.city || cityHint || null,
+      });
       setLoadedPastRun(null);
 
       const matchWarns = extractMatchWarnings(res);
@@ -462,7 +480,7 @@ export default function App() {
 
       showNotification(
         "success",
-        `Match complete: ${res.matched_count} YPs matched, ${res.waitlisted_count} waitlisted. Click 'Compare Matches' on top to evaluate.`,
+        `Match complete (${stateScopeDisplay}): ${res.matched_count} YPs matched, ${res.waitlisted_count} waitlisted. Click 'Compare Matches' on top to evaluate.`,
       );
     } catch (err: any) {
       setPipelineSteps((prev) =>
@@ -491,12 +509,24 @@ export default function App() {
       warning: runDetail.warning,
       id: runDetail.id,
       run_id: runDetail.id,
+      state: runDetail.state || runDetail.metadata?.state,
+      city: runDetail.city || runDetail.metadata?.city,
     });
     if (runDetail.hop_limit != null) setHopLimit(runDetail.hop_limit);
     if (runDetail.match_cap !== undefined && runDetail.match_cap !== null)
       setMatchCap(runDetail.match_cap);
     if (runDetail.shortlist_size != null)
       setShortlistSize(runDetail.shortlist_size);
+    if (runDetail.state !== undefined) {
+      setSelectedState(runDetail.state || "");
+    } else if (runDetail.metadata?.state) {
+      setSelectedState(runDetail.metadata.state);
+    }
+    if (runDetail.city !== undefined) {
+      setCityHint(runDetail.city || "");
+    } else if (runDetail.metadata?.city) {
+      setCityHint(runDetail.metadata.city);
+    }
     if (runDetail.total_yps) {
       setYpLoadedCount(runDetail.total_yps);
     } else {
@@ -507,6 +537,8 @@ export default function App() {
     const runTime = runDetail.created_at
       ? new Date(runDetail.created_at).toLocaleTimeString()
       : "Saved";
+    const loadedStateDisplay =
+      runDetail.state || runDetail.metadata?.state || "Saved Scope";
     setPipelineSteps([
       {
         id: "1",
@@ -518,7 +550,7 @@ export default function App() {
       {
         id: "2",
         title: "2. Landmark Geocoding",
-        description: "Geocode centroid coordinates",
+        description: `Geocode centroid coordinates (${loadedStateDisplay})`,
         status: "completed",
         timestamp: runTime,
       },
@@ -778,6 +810,14 @@ export default function App() {
                   <span className="text-[10px] font-mono bg-orange-200/80 text-orange-950 font-bold px-2 py-0.5 rounded-full">
                     Database Record
                   </span>
+                  {(loadedPastRun.state || loadedPastRun.metadata?.state) && (
+                    <span className="text-[10px] font-mono bg-slate-900 text-white font-bold px-2 py-0.5 rounded-full">
+                      State:{" "}
+                      {loadedPastRun.state || loadedPastRun.metadata?.state}
+                      {(loadedPastRun.city || loadedPastRun.metadata?.city) &&
+                        ` (${loadedPastRun.city || loadedPastRun.metadata?.city})`}
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-slate-600 mt-0.5 truncate">
                   Executed on{" "}
@@ -855,6 +895,10 @@ export default function App() {
               onMatchCapChange={setMatchCap}
               shortlistSize={shortlistSize}
               onShortlistSizeChange={setShortlistSize}
+              selectedState={selectedState}
+              onSelectedStateChange={setSelectedState}
+              cityHint={cityHint}
+              onCityHintChange={setCityHint}
               onUploadYP={handleUploadYP}
               onUploadMCP={handleUploadMCP}
               onRunMatch={handleRunMatch}

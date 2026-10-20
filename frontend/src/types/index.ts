@@ -28,6 +28,8 @@ export interface MatchRunResponse {
   waitlist: WaitlistEntry[];
   matched_count: number;
   waitlisted_count: number;
+  state?: string | null;
+  city?: string | null;
   warnings?: string[] | string;
   warning?: string;
   landmark_overlap_warning?: string;
@@ -40,6 +42,8 @@ export interface MatchRunResponse {
 export interface MatchRunSummary {
   id: number | string;
   created_at: string;
+  state?: string | null;
+  city?: string | null;
   user_id?: number | null;
   user_email?: string | null;
   user_name?: string | null;
@@ -61,6 +65,8 @@ export interface MatchRunSummary {
 export interface MatchRunDetail {
   id: number | string;
   created_at?: string;
+  state?: string | null;
+  city?: string | null;
   user_id?: number | null;
   user_email?: string | null;
   user_name?: string | null;

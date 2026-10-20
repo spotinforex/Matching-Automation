@@ -36,7 +36,11 @@ from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
 from utils.data_loader import load_yps, load_mcps
-from logic.services import HaversineDistanceService, GoogleMapsDistanceService  # noqa: F401
+from logic.services import (  # noqa: F401
+    HaversineDistanceService,
+    GoogleMapsDistanceService,
+    resolve_state,
+)
 from logic.cached_distance_service import CachedDistanceService
 from utils.excel_export import build_results_workbook
 from utils.evaluation import compare_matches, load_manual_matches, write_evaluation_workbook
@@ -94,6 +98,7 @@ state = {
     "mcps": None,
     "last_result": None,
     "last_evaluation": None,
+    "distance_service": None,  # the service (i.e. state scope) used by the last /match/run
 }
 
 _google_api_key = os.environ.get("GOOGLE_API_KEY")
@@ -119,16 +124,46 @@ app.state.database_url = _database_url
 app.include_router(auth_router)
 app.include_router(admin_router)
 
-if _google_api_key:
-    _real_service = GoogleMapsDistanceService(api_key=_google_api_key)
-    DISTANCE_SERVICE = CachedDistanceService(_real_service, database_url=_database_url)
-    logger.info("Using GoogleMapsDistanceService with a Postgres-backed cache (DATABASE_URL set).")
-else:
+# Geographic scope used when /match/run is called without a STATE param.
+# Defaults keep the original Aba, Abia State behavior. Set DEFAULT_STATE=any
+# to default to "no state filter", or DEFAULT_STATE=Lagos (etc.) to move the
+# default; DEFAULT_CITY only sharpens the address hint, it is never a filter.
+try:
+    DEFAULT_STATE = resolve_state(os.environ.get("DEFAULT_STATE", "Abia"))
+except ValueError as e:
+    raise RuntimeError(f"Invalid DEFAULT_STATE env var: {e}") from e
+DEFAULT_CITY = (os.environ.get("DEFAULT_CITY", "Aba") or "").strip() or None
+
+if not _google_api_key:
     logger.warning(
-        "GOOGLE_MAPS_API_KEY not set — falling back to the offline "
+        "GOOGLE_API_KEY not set — falling back to the offline "
         "Haversine estimate. Real matches will be inaccurate until this is set."
     )
-    DISTANCE_SERVICE = HaversineDistanceService(coordinate_lookup={})
+
+# One distance service per (state, city) scope, built lazily and reused, so
+# each scope keeps its own in-memory geocode/travel-time caches across runs.
+# A service's scope is fixed at construction (never mutated), which keeps
+# concurrent requests for different states from stepping on each other.
+_distance_services: dict = {}
+
+
+def get_distance_service(state_name: str | None, city: str | None = None):
+    key = (state_name, city)
+    if key not in _distance_services:
+        if _google_api_key:
+            real = GoogleMapsDistanceService(api_key=_google_api_key, state=state_name, city_hint=city)
+            _distance_services[key] = CachedDistanceService(real, database_url=_database_url)
+            logger.info(
+                "Using GoogleMapsDistanceService (state=%s, city=%s) with a Postgres-backed cache.",
+                state_name or "any", city,
+            )
+        else:
+            _distance_services[key] = HaversineDistanceService(coordinate_lookup={})
+    return _distance_services[key]
+
+
+# Default-scope service; also the fallback for evaluation when no run has happened yet.
+DISTANCE_SERVICE = get_distance_service(DEFAULT_STATE, DEFAULT_CITY)
 
 
 @app.get("/health")
@@ -264,6 +299,18 @@ def run_match(
     HOP_LIMIT: int = 3,
     MATCH_CAP: int | None = None,
     SHORTLIST_SIZE: int = 10,
+    STATE: str | None = Query(
+        None,
+        description=(
+            "Restrict geocoding to one Nigerian state (e.g. Lagos, Akwa Ibom, FCT) "
+            "with a hard Google filter, or 'any' for no state filter. "
+            "Omit to use the server default (DEFAULT_STATE, Abia unless configured)."
+        ),
+    ),
+    CITY: str | None = Query(
+        None,
+        description="Optional city hint to sharpen short addresses (never a hard filter). Ignored when STATE is omitted.",
+    ),
     current_user: dict = Depends(require_permission("run_match")),
 ):
     if not state["yps"]:
@@ -271,9 +318,24 @@ def run_match(
     if not state["mcps"]:
         raise HTTPException(400, "No MCP data loaded — call /upload/mcp first")
 
-    matcher = Matcher(DISTANCE_SERVICE)
+    # Resolve the geographic scope for this run. STATE omitted -> server
+    # defaults (state + city). STATE given -> exactly what was asked for;
+    # "any" (or none/open/all/blank) means no state filter at all.
+    if STATE is None:
+        scope_state, scope_city = DEFAULT_STATE, DEFAULT_CITY
+    else:
+        try:
+            scope_state = resolve_state(STATE)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        scope_city = (CITY or "").strip() or None
+
+    distance_service = get_distance_service(scope_state, scope_city)
+    state["distance_service"] = distance_service
+
+    matcher = Matcher(distance_service)
     matcher.geocode_missing(state["yps"], state["mcps"])
-    landmark_order = build_landmark_order(state["yps"] + state["mcps"], DISTANCE_SERVICE)
+    landmark_order = build_landmark_order(state["yps"] + state["mcps"], distance_service)
 
     result = matcher.run(
         state["yps"], state["mcps"], landmark_order,
@@ -319,6 +381,7 @@ def run_match(
         actor_name=current_user.get("full_name"),
         metadata={
             "hop_limit": HOP_LIMIT, "match_cap": MATCH_CAP, "shortlist_size": SHORTLIST_SIZE,
+            "state": scope_state or "any", "city": scope_city,
             "matched_count": len(matches), "waitlisted_count": len(waitlist),
             "match_run_id": run_id,
         },
@@ -480,7 +543,8 @@ async def compare_evaluation(
     try:
         report = compare_matches(
             state["yps"], state["mcps"], manual_pairs, automated_pairs,
-            config=criteria_config, distance_service=DISTANCE_SERVICE,
+            config=criteria_config,
+            distance_service=state.get("distance_service") or DISTANCE_SERVICE,
         )
     except Exception:
         logger.exception("compare_evaluation() failed")

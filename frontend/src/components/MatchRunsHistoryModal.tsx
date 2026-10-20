@@ -89,7 +89,20 @@ export const MatchRunsHistoryModal: React.FC<MatchRunsHistoryModalProps> = ({
         .toLowerCase()
         .includes(term);
       const dateMatch = (run.created_at || "").toLowerCase().includes(term);
-      return idMatch || emailMatch || nameMatch || dateMatch;
+      const stateMatch = String(run.state || run.metadata?.state || "")
+        .toLowerCase()
+        .includes(term);
+      const cityMatch = String(run.city || run.metadata?.city || "")
+        .toLowerCase()
+        .includes(term);
+      return (
+        idMatch ||
+        emailMatch ||
+        nameMatch ||
+        dateMatch ||
+        stateMatch ||
+        cityMatch
+      );
     });
   }, [runs, searchTerm]);
 
@@ -419,6 +432,16 @@ export const MatchRunsHistoryModal: React.FC<MatchRunsHistoryModalProps> = ({
                             {run.shortlist_size ?? 10}
                           </strong>
                         </span>
+                        {(run.state || run.metadata?.state) && (
+                          <span className="bg-orange-50 text-orange-800 px-2 py-0.5 rounded border border-orange-200 font-medium">
+                            State:{" "}
+                            <strong className="text-orange-950">
+                              {run.state || run.metadata?.state}
+                            </strong>
+                            {(run.city || run.metadata?.city) &&
+                              ` (${run.city || run.metadata?.city})`}
+                          </span>
+                        )}
                       </div>
                     </div>
 

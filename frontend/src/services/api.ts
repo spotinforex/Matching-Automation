@@ -16,7 +16,7 @@ import {
   AdminUserUpdateRequest,
 } from '../types';
 
-export const DEFAULT_BACKEND_URL = 'https://ffp-matching-app-git-866044218217.europe-west1.run.app';
+export const DEFAULT_BACKEND_URL = 'http://localhost:8000';
 const TOKEN_STORAGE_KEY = 'mcp_auth_token';
 
 export class ApiService {
@@ -451,7 +451,9 @@ export class ApiService {
   public async runMatch(
     hopLimit: number = 10,
     matchCap?: number | null,
-    shortlistSize: number = 10
+    shortlistSize: number = 10,
+    state?: string | null,
+    city?: string | null
   ): Promise<MatchRunResponse> {
     const params = new URLSearchParams();
     params.append('HOP_LIMIT', hopLimit.toString());
@@ -459,6 +461,13 @@ export class ApiService {
       params.append('MATCH_CAP', matchCap.toString());
     }
     params.append('SHORTLIST_SIZE', shortlistSize.toString());
+
+    if (state !== undefined && state !== null && state.trim() !== '') {
+      params.append('STATE', state.trim());
+    }
+    if (city !== undefined && city !== null && city.trim() !== '') {
+      params.append('CITY', city.trim());
+    }
 
     const response = await this.fetchWithAuth(`${this.baseUrl}/match/run?${params.toString()}`, {
       method: 'POST',

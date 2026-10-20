@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useMemo } from "react";
 import {
   Upload,
   FileSpreadsheet,
@@ -13,7 +13,15 @@ import {
   ChevronUp,
   ShieldCheck,
   History,
+  MapPin,
+  Globe,
+  Compass,
+  Sparkles,
 } from "lucide-react";
+import {
+  NIGERIAN_STATES,
+  getGeocodingScopeDescription,
+} from "../utils/nigeriaGeo";
 
 interface FileUploadSectionProps {
   ypLoadedCount: number | null;
@@ -29,6 +37,10 @@ interface FileUploadSectionProps {
   onMatchCapChange: (cap: number | null) => void;
   shortlistSize: number;
   onShortlistSizeChange: (size: number) => void;
+  selectedState: string;
+  onSelectedStateChange: (state: string) => void;
+  cityHint: string;
+  onCityHintChange: (city: string) => void;
   onUploadYP: (file: File) => void;
   onUploadMCP: (file: File) => void;
   onRunMatch: () => void;
@@ -49,6 +61,10 @@ export const FileUploadSection: React.FC<FileUploadSectionProps> = ({
   onMatchCapChange,
   shortlistSize,
   onShortlistSizeChange,
+  selectedState,
+  onSelectedStateChange,
+  cityHint,
+  onCityHintChange,
   onUploadYP,
   onUploadMCP,
   onRunMatch,
@@ -60,6 +76,7 @@ export const FileUploadSection: React.FC<FileUploadSectionProps> = ({
   const [ypDragOver, setYpDragOver] = useState(false);
   const [mcpDragOver, setMcpDragOver] = useState(false);
   const [showSchemaGuide, setShowSchemaGuide] = useState(false);
+  const [isCustomStateMode, setIsCustomStateMode] = useState(false);
 
   const handleYpDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -76,6 +93,28 @@ export const FileUploadSection: React.FC<FileUploadSectionProps> = ({
       onUploadMCP(e.dataTransfer.files[0]);
     }
   };
+
+  const geocodingScope = useMemo(() => {
+    return getGeocodingScopeDescription(selectedState, cityHint);
+  }, [selectedState, cityHint]);
+
+  const suggestedCities = useMemo(() => {
+    if (!selectedState || selectedState === "any") {
+      return [
+        "Aba",
+        "Umuahia",
+        "Port Harcourt",
+        "Ikeja",
+        "Abuja",
+        "Kano",
+        "Enugu",
+      ];
+    }
+    const found = NIGERIAN_STATES.find(
+      (s) => s.value.toLowerCase() === selectedState.toLowerCase(),
+    );
+    return found ? found.suggestedCities : [];
+  }, [selectedState]);
 
   const canRunMatch =
     ypLoadedCount !== null &&
@@ -604,6 +643,275 @@ export const FileUploadSection: React.FC<FileUploadSectionProps> = ({
           </div>
         </div>
 
+        {/* Geographic Geocoding Scope & State Filter (STATE & CITY) */}
+        <div className="bg-gradient-to-r from-orange-50/70 via-slate-50 to-orange-50/40 p-4 rounded-xl border border-orange-200/80 space-y-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-orange-200/60 pb-2.5">
+            <div className="flex items-center space-x-2">
+              <div className="p-1.5 bg-orange-600 text-white rounded-lg shadow-2xs">
+                <MapPin className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center space-x-2">
+                  <h4 className="font-bold text-xs text-slate-900 uppercase tracking-wider">
+                    Geocoding Scope & State Filter (STATE & CITY)
+                  </h4>
+                  <span className="text-[10px] font-bold bg-orange-200/80 text-orange-950 px-2 py-0.5 rounded-full">
+                    Backend Filter
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600">
+                  Controls Google Maps geocoding filter (
+                  <code>
+                    administrative_area:&lt;State&gt; State|country:NG
+                  </code>
+                  ) and address locality sharpening.
+                </p>
+              </div>
+            </div>
+
+            {/* Quick scope presets */}
+            <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
+              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mr-1 hidden sm:inline">
+                Presets:
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectedStateChange("");
+                  setIsCustomStateMode(false);
+                }}
+                className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-all cursor-pointer ${
+                  selectedState === "" && !isCustomStateMode
+                    ? "bg-orange-600 text-white shadow-2xs"
+                    : "bg-white hover:bg-slate-100 text-slate-700 border border-slate-200"
+                }`}
+                title="Use server default (Abia State with Aba hint)"
+              >
+                Abia (Default)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectedStateChange("Lagos");
+                  setIsCustomStateMode(false);
+                }}
+                className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-all cursor-pointer ${
+                  selectedState.toLowerCase() === "lagos" && !isCustomStateMode
+                    ? "bg-orange-600 text-white shadow-2xs"
+                    : "bg-white hover:bg-slate-100 text-slate-700 border border-slate-200"
+                }`}
+                title="Pin geocoding to Lagos State"
+              >
+                Lagos
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectedStateChange("FCT");
+                  setIsCustomStateMode(false);
+                }}
+                className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-all cursor-pointer ${
+                  (selectedState.toLowerCase() === "fct" ||
+                    selectedState.toLowerCase() === "abuja") &&
+                  !isCustomStateMode
+                    ? "bg-orange-600 text-white shadow-2xs"
+                    : "bg-white hover:bg-slate-100 text-slate-700 border border-slate-200"
+                }`}
+                title="Pin geocoding to FCT / Abuja"
+              >
+                FCT / Abuja
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectedStateChange("Rivers");
+                  setIsCustomStateMode(false);
+                }}
+                className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-all cursor-pointer ${
+                  selectedState.toLowerCase() === "rivers" && !isCustomStateMode
+                    ? "bg-orange-600 text-white shadow-2xs"
+                    : "bg-white hover:bg-slate-100 text-slate-700 border border-slate-200"
+                }`}
+                title="Pin geocoding to Rivers State (Port Harcourt)"
+              >
+                Rivers
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectedStateChange("any");
+                  setIsCustomStateMode(false);
+                }}
+                className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-all cursor-pointer flex items-center space-x-1 ${
+                  selectedState.toLowerCase() === "any" && !isCustomStateMode
+                    ? "bg-orange-600 text-white shadow-2xs"
+                    : "bg-white hover:bg-slate-100 text-slate-700 border border-slate-200"
+                }`}
+                title="Remove state filter; country:NG only"
+              >
+                <Globe className="w-3 h-3" />
+                <span>Open (Any)</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* State selection */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-700 flex items-center space-x-1.5">
+                  <span>
+                    Geocoding State Scope (<code>STATE</code>)
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsCustomStateMode(!isCustomStateMode)}
+                  className="text-[10px] text-orange-600 hover:text-orange-700 font-semibold underline cursor-pointer"
+                >
+                  {isCustomStateMode
+                    ? "Switch to Standard Dropdown"
+                    : "Custom / Freeform Input"}
+                </button>
+              </div>
+
+              {!isCustomStateMode ? (
+                <div className="relative">
+                  <select
+                    value={selectedState}
+                    onChange={(e) => {
+                      if (e.target.value === "__custom__") {
+                        setIsCustomStateMode(true);
+                      } else {
+                        onSelectedStateChange(e.target.value);
+                      }
+                    }}
+                    className="w-full bg-white border border-slate-300 focus:border-orange-500 rounded-lg px-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-orange-500 font-medium cursor-pointer"
+                  >
+                    <option value="">
+                      Abia State (Server Default • 'Aba' Hint)
+                    </option>
+                    <option value="any">
+                      🌐 Open Nationwide (No state filter • country:NG)
+                    </option>
+                    <optgroup label="36 Nigerian States & FCT">
+                      {NIGERIAN_STATES.map((st) => (
+                        <option key={st.value} value={st.value}>
+                          {st.label} {st.capital ? `(${st.capital})` : ""}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <option value="__custom__">
+                      ✏️ Custom Freeform State String...
+                    </option>
+                  </select>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <input
+                    type="text"
+                    value={selectedState}
+                    onChange={(e) => onSelectedStateChange(e.target.value)}
+                    placeholder="e.g. lagos, Lagos State, akwa ibom, Abuja"
+                    className="w-full bg-white border border-orange-400 focus:border-orange-600 rounded-lg px-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-orange-500 font-mono"
+                  />
+                  <p className="text-[10px] text-slate-500">
+                    Input is forgiving: <code>lagos</code>,{" "}
+                    <code>Lagos State</code>, and <code>akwa ibom</code> all
+                    resolve. Typos return a 400 error.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* City hint */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-700 flex items-center space-x-1.5">
+                  <span>
+                    Address Locality Hint (<code>CITY</code> - Optional)
+                  </span>
+                </label>
+                {cityHint && (
+                  <button
+                    type="button"
+                    onClick={() => onCityHintChange("")}
+                    className="text-[10px] text-slate-400 hover:text-slate-600 underline cursor-pointer"
+                  >
+                    Clear hint
+                  </button>
+                )}
+              </div>
+
+              <input
+                type="text"
+                value={cityHint}
+                onChange={(e) => onCityHintChange(e.target.value)}
+                placeholder="e.g. Aba, Port Harcourt, Ikeja, Lekki, Abuja"
+                className="w-full bg-white border border-slate-300 focus:border-orange-500 rounded-lg px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-orange-500"
+              />
+
+              {/* City chips suggestions */}
+              {suggestedCities.length > 0 && (
+                <div className="flex items-center space-x-1 flex-wrap gap-y-1 pt-0.5">
+                  <span className="text-[10px] text-slate-400">
+                    Suggestions:
+                  </span>
+                  {suggestedCities.map((city) => (
+                    <button
+                      key={city}
+                      type="button"
+                      onClick={() =>
+                        onCityHintChange(city === cityHint ? "" : city)
+                      }
+                      className={`text-[10px] px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+                        cityHint.toLowerCase() === city.toLowerCase()
+                          ? "bg-orange-600 text-white font-bold"
+                          : "bg-white hover:bg-slate-100 text-slate-600 border border-slate-200"
+                      }`}
+                    >
+                      {city}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Live Geocoding Filter Preview Banner */}
+          <div className="bg-slate-900 text-slate-200 p-3 rounded-lg text-xs space-y-1 font-mono shadow-2xs">
+            <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] font-sans pb-1 border-b border-slate-800">
+              <span className="text-orange-400 font-bold flex items-center space-x-1">
+                <Compass className="w-3.5 h-3.5" />
+                <span>Active Geocoding Scope: {geocodingScope.scopeTitle}</span>
+              </span>
+              <span className="text-slate-400 text-[10px]">
+                {selectedState.toLowerCase() === "any"
+                  ? "Unfiltered Country Scope"
+                  : "Administrative Area Filter Active"}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-[11px]">
+              <div>
+                <span className="text-slate-400 font-sans block text-[10px]">
+                  Google Maps Component Filter:
+                </span>
+                <span className="text-emerald-400 select-all font-bold">
+                  {geocodingScope.googleFilter}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 font-sans block text-[10px]">
+                  Address Append Pattern:
+                </span>
+                <span className="text-amber-300 select-all font-bold">
+                  "{geocodingScope.addressHint}"
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Action Button Footer */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-slate-100">
           <div>
@@ -633,12 +941,19 @@ export const FileUploadSection: React.FC<FileUploadSectionProps> = ({
             {isMatching ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                <span>Running Match Pipeline (POST /match/run)...</span>
+                <span>
+                  Running Match Pipeline (STATE={selectedState || "default"})...
+                </span>
               </>
             ) : (
               <>
                 <Play className="w-4 h-4 fill-current text-white" />
-                <span>Run Match Engine</span>
+                <span>
+                  Run Match Engine
+                  {selectedState
+                    ? ` (${selectedState.toLowerCase() === "any" ? "Nationwide" : selectedState})`
+                    : " (Abia Default)"}
+                </span>
               </>
             )}
           </button>
